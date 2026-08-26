@@ -1,11 +1,11 @@
 import { agentLoop, type AgentContext, type AgentLoopConfig, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { Message, Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
-import { Type } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 import { AGENT_LOOP_MAX_TOKENS, boundedMaxTokens } from "../../model-budget.js";
-import { isObservation, isSegment, type MemoryTree, type NodeProposal, type ObserverOutput } from "../../memory-tree/types.js";
+import type { MemoryTree, NodeProposal, ObserverOutput } from "../../memory-tree/types.js";
 import { logAgentStreamError } from "../stream-errors.js";
 import { OBSERVER_SYSTEM } from "./prompts.js";
+import { buildObserverUserPrompt, OBSERVER_TOOL_SCHEMA } from "./protocol.js";
 
 export interface RunObserverArgs {
 	model: Model<any>;
@@ -22,24 +22,6 @@ export interface RunObserverArgs {
 	thinkingLevel?: ModelThinkingLevel;
 }
 
-const NodeProposalSchema = Type.Union([
-	Type.Object({ type: Type.Literal("ref"), id: Type.String({ minLength: 1 }) }),
-	Type.Object({
-		type: Type.Literal("observation"),
-		content: Type.String({ minLength: 1 }),
-		sourceEntryIds: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
-	}),
-	Type.Object({
-		type: Type.Literal("segment"),
-		id: Type.Optional(Type.String({ pattern: "^s_[a-f0-9]{12}$" })),
-		title: Type.String({ minLength: 1, maxLength: 120 }),
-		summary: Type.String({ minLength: 1, maxLength: 2000 }),
-		children: Type.Array(Type.Any(), { description: "Recursive NodeProposal children using the same ref/observation/segment shapes." }),
-	}),
-]);
-
-const SubmitTreeSchema = Type.Object({ tree: Type.Union([NodeProposalSchema, Type.Null()]) });
-
 export class ObserverStreamError extends Error {
 	constructor(readonly stopReason: string, errorMessage?: string) {
 		super(`observer stream ended with stopReason "${stopReason}"${errorMessage ? `: ${errorMessage}` : ""}`);
@@ -54,22 +36,6 @@ export class ObserverProtocolError extends Error {
 	}
 }
 
-function currentTreeText(tree: MemoryTree): string {
-	if (!tree.root) return "(no Root yet)";
-	if (isObservation(tree.root)) {
-		return `Root Observation: [${tree.root.id}] ${tree.root.content}\nSources: ${tree.root.sourceEntryIds.join(", ")}`;
-	}
-	const lines = [`Root Segment: [${tree.root.id}] ${tree.root.title}`, `Summary: ${tree.root.summary}`, "Direct children:"];
-	for (const id of tree.root.childIds) {
-		const child = tree.observationsById.get(id) ?? tree.segmentsById.get(id as `s_${string}`);
-		if (!child) continue;
-		lines.push(isSegment(child)
-			? `- Segment [${child.id}] ${child.title} — ${child.summary}`
-			: `- Observation [${child.id}] ${child.content} (sources: ${child.sourceEntryIds.join(", ")})`);
-	}
-	return lines.join("\n");
-}
-
 export async function runObserver(args: RunObserverArgs): Promise<ObserverOutput> {
 	let submitted: ObserverOutput | undefined;
 	let duplicateSubmission = false;
@@ -77,7 +43,7 @@ export async function runObserver(args: RunObserverArgs): Promise<ObserverOutput
 		name: "submit_memory_tree",
 		label: "Submit memory tree",
 		description: "Submit the single recursive Segment Memory Tree increment for this Observer run.",
-		parameters: SubmitTreeSchema,
+		parameters: OBSERVER_TOOL_SCHEMA,
 		execute: async (_id, params) => {
 			const typed = params as { tree: NodeProposal | null };
 			if (submitted) {
@@ -89,14 +55,7 @@ export async function runObserver(args: RunObserverArgs): Promise<ObserverOutput
 		},
 	};
 
-	const userText = `SEGMENT REQUIRED: ${args.segmentRequired ? "yes" : "no"}
-Successful Observation batches since last completed segmentation: ${args.successfulBatches}
-
-CURRENT TREE:
-${currentTreeText(args.tree)}
-
-NEW SOURCE:
-${args.chunk.trim() || "(none)"}`;
+	const userText = buildObserverUserPrompt(args);
 	const prompts: Message[] = [{ role: "user", content: [{ type: "text", text: userText }], timestamp: Date.now() }];
 	const context: AgentContext = { systemPrompt: OBSERVER_SYSTEM, messages: [], tools: [tool] };
 	const config: AgentLoopConfig = {

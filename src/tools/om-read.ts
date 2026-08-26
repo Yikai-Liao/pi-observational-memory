@@ -7,6 +7,29 @@ import { MemoryTreeStore } from "../memory-tree/store.js";
 import type { Entry, MemoryTree } from "../memory-tree/types.js";
 import { SessionCatalog } from "../sessions/catalog.js";
 
+export const OM_READ_DESCRIPTION = "Read a Segment or Observation from the current or an exact local persisted Pi Session. Omit sessionId for current. depth=-1 expands the full subtree. Set outputPath only when the user explicitly requests a file; otherwise return inline.";
+export const OM_READ_GUIDELINE = "For om_read, omit sessionId for the current Session and omit outputPath unless the user explicitly supplied a file path. A requested response format such as JSON or JSONL is inline by default; never invent 'current' or a temporary output path.";
+
+export const OM_READ_SCHEMA = Type.Object({
+	sessionId: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Null()], { description: "Exact Session ID explicitly supplied by the user. Use null for the current active branch; never write 'current' or copy a node ID." })),
+	nodeId: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Null()], { description: "Exact node ID supplied by the user. Use null for the Root." })),
+	depth: Type.Optional(Type.Integer({ minimum: -1, description: "Descendant depth; -1 means the complete subtree. Default 1." })),
+	includeSummary: Type.Optional(Type.Boolean({ description: "Include Segment summaries. Default true." })),
+	format: Type.Optional(StringEnum(["markdown", "json", "jsonl"] as const)),
+	outputPath: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Null()], { description: "Use only when the user explicitly asks to write/save/export to this exact path. Use null for normal inline markdown/JSON/JSONL output; never invent a temporary path." })),
+});
+
+type OmReadArguments = { sessionId?: string | null; nodeId?: string | null; depth?: number; includeSummary?: boolean; format?: "markdown" | "json" | "jsonl"; outputPath?: string | null };
+
+export function normalizeOmReadArguments(args: unknown): OmReadArguments {
+	if (!args || typeof args !== "object") return args as OmReadArguments;
+	const input = { ...(args as Record<string, unknown>) };
+	if (input.sessionId === null || (typeof input.sessionId === "string" && ["", "current"].includes(input.sessionId.trim().toLowerCase()))) delete input.sessionId;
+	if (input.nodeId === null) delete input.nodeId;
+	if (input.outputPath === null || (typeof input.outputPath === "string" && input.outputPath.trim() === "")) delete input.outputPath;
+	return input;
+}
+
 function lineCount(value: string): number {
 	return value.length === 0 ? 0 : value.split("\n").length;
 }
@@ -15,16 +38,11 @@ export function registerOmReadTool(pi: ExtensionAPI, catalog = new SessionCatalo
 	pi.registerTool(defineTool({
 		name: "om_read",
 		label: "Read memory tree",
-		description: "Read a Segment or Observation from the current or an exact local persisted Pi Session. depth=-1 expands the full subtree. JSONL can be exported for analysis.",
+		description: OM_READ_DESCRIPTION,
 		promptSnippet: "Read or expand Segment Memory nodes by exact node and optional Session ID",
-		parameters: Type.Object({
-			sessionId: Type.Optional(Type.String({ minLength: 1, description: "Exact Session ID. Omit for the current active branch." })),
-			nodeId: Type.Optional(Type.String({ minLength: 1, description: "Node ID. Omit for the Root." })),
-			depth: Type.Optional(Type.Integer({ minimum: -1, description: "Descendant depth; -1 means the complete subtree. Default 1." })),
-			includeSummary: Type.Optional(Type.Boolean({ description: "Include Segment summaries. Default true." })),
-			format: Type.Optional(StringEnum(["markdown", "json", "jsonl"] as const)),
-			outputPath: Type.Optional(Type.String({ minLength: 1, description: "Write the complete result to this path and return compact metadata." })),
-		}),
+		promptGuidelines: [OM_READ_GUIDELINE],
+		parameters: OM_READ_SCHEMA,
+		prepareArguments: normalizeOmReadArguments,
 		async execute(_id, params, signal, _update, ctx) {
 			signal?.throwIfAborted();
 			let tree: MemoryTree;
@@ -40,7 +58,7 @@ export function registerOmReadTool(pi: ExtensionAPI, catalog = new SessionCatalo
 			}
 			const format = (params.format ?? "markdown") as ExportFormat;
 			const output = exportMemory(tree, identity, {
-				nodeId: params.nodeId,
+				nodeId: params.nodeId ?? undefined,
 				depth: params.depth,
 				includeSummary: params.includeSummary,
 				format,

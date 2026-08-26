@@ -1,0 +1,121 @@
+[
+  {
+    "name": "empty-session-no-durable-source",
+    "segmentRequired": true,
+    "successfulBatches": 0,
+    "tree": { "observations": [], "segments": [] },
+    "source": "",
+    "expect": { "topType": "null" }
+  },
+  {
+    "name": "first-observation-preserves-user-assertion",
+    "segmentRequired": false,
+    "successfulBatches": 0,
+    "tree": { "observations": [], "segments": [] },
+    "source": "[Source entry id: src-1]\n[User]: Our production database is PostgreSQL 16; do not describe it as MySQL.\n\n[Source entry id: src-2]\n[User]: Which database do we use?",
+    "expect": { "topTypes": ["observation", "segment"], "sourceIdsInclude": ["src-1"], "contentTerms": ["PostgreSQL 16", "MySQL"] }
+  },
+  {
+    "name": "multiple-first-batch-observations-create-root-segment",
+    "segmentRequired": false,
+    "successfulBatches": 0,
+    "tree": { "observations": [], "segments": [] },
+    "source": "[Source entry id: src-1]\n[User]: Use pnpm, not npm, for this repository.\n\n[Source entry id: src-2]\n[User]: Keep Node.js 22 as the minimum runtime.",
+    "expect": { "topType": "segment", "newObservationCount": 2, "sourceIds": ["src-1", "src-2"], "rootId": null }
+  },
+  {
+    "name": "second-observation-forces-standard-root-transition",
+    "segmentRequired": false,
+    "successfulBatches": 1,
+    "tree": {
+      "observations": [{ "id": "aaaaaaaaaaaa", "content": "User selected PostgreSQL for production after comparing database options.", "sourceEntryIds": ["old-1"] }],
+      "segments": [],
+      "rootId": "aaaaaaaaaaaa"
+    },
+    "source": "[Source entry id: src-1]\n[User]: Use pgvector for semantic indexing.",
+    "expect": { "topType": "segment", "rootId": null, "refIds": ["aaaaaaaaaaaa"], "sourceIds": ["src-1"] }
+  },
+  {
+    "name": "segment-root-appends-through-stable-id",
+    "segmentRequired": false,
+    "successfulBatches": 0,
+    "tree": {
+      "observations": [
+        { "id": "aaaaaaaaaaaa", "content": "Investigation identified a routing bug in the release workflow with exact branch conditions.", "sourceEntryIds": ["old-1"] },
+        { "id": "bbbbbbbbbbbb", "content": "Implementation corrected the release workflow and preserved existing development behavior.", "sourceEntryIds": ["old-2"] }
+      ],
+      "segments": [{ "id": "s_111111111111", "title": "Release workflow repair", "summary": "Located and repaired release routing.", "childIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb"] }],
+      "rootId": "s_111111111111"
+    },
+    "source": "[Source entry id: src-1]\n[Assistant]: completed: ran npm test; all 98 tests passed.\n\n[Source entry id: src-2]\n[Tool result for bash]: 98 passed, 0 failed.",
+    "expect": { "topType": "segment", "rootId": "s_111111111111", "sourceIds": ["src-1", "src-2"], "contentTerms": ["98", "pass"] }
+  },
+  {
+    "name": "forced-segmentation-groups-consecutive-closed-work",
+    "segmentRequired": true,
+    "successfulBatches": 1,
+    "tree": {
+      "observations": [
+        { "id": "aaaaaaaaaaaa", "content": "Investigation reproduced issue 404 and traced the failure to auth.ts token parsing.", "sourceEntryIds": ["old-1"] },
+        { "id": "bbbbbbbbbbbb", "content": "Implementation corrected auth.ts token parsing and added a focused regression test.", "sourceEntryIds": ["old-2"] },
+        { "id": "cccccccccccc", "content": "Validation confirmed the focused auth test and full suite pass after the correction.", "sourceEntryIds": ["old-3"] },
+        { "id": "dddddddddddd", "content": "A separate documentation review started and remains in progress without conclusions.", "sourceEntryIds": ["old-4"] }
+      ],
+      "segments": [{ "id": "s_111111111111", "title": "Session work", "summary": "Fixed authentication and started documentation review.", "childIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc", "dddddddddddd"] }],
+      "rootId": "s_111111111111"
+    },
+    "source": "",
+    "expect": { "topType": "segment", "rootId": "s_111111111111", "nestedSegment": true, "groupedRefIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc"], "ungroupedRefIds": ["dddddddddddd"] }
+  },
+  {
+    "name": "forced-check-can-leave-unrelated-work-ungrouped",
+    "segmentRequired": true,
+    "successfulBatches": 1,
+    "tree": {
+      "observations": [
+        { "id": "aaaaaaaaaaaa", "content": "User stated their preferred editor theme is Solarized Dark for accessibility.", "sourceEntryIds": ["old-1"] },
+        { "id": "bbbbbbbbbbbb", "content": "Agent diagnosed a transient CI outage caused by an unavailable external runner.", "sourceEntryIds": ["old-2"] }
+      ],
+      "segments": [{ "id": "s_111111111111", "title": "Current session", "summary": "Recorded a preference and diagnosed CI.", "childIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb"] }],
+      "rootId": "s_111111111111"
+    },
+    "source": "",
+    "expect": { "topType": "segment", "rootId": "s_111111111111", "nestedSegment": false }
+  },
+  {
+    "name": "unfinished-phase-may-be-segmented-truthfully",
+    "segmentRequired": true,
+    "successfulBatches": 1,
+    "tree": {
+      "observations": [
+        { "id": "aaaaaaaaaaaa", "content": "Investigation tested DNS resolution and confirmed it succeeds from the build host.", "sourceEntryIds": ["old-1"] },
+        { "id": "bbbbbbbbbbbb", "content": "Investigation tested TLS and found certificate verification fails with error CERT_HAS_EXPIRED.", "sourceEntryIds": ["old-2"] },
+        { "id": "cccccccccccc", "content": "The deployment remains blocked because certificate ownership is still unknown.", "sourceEntryIds": ["old-3"] },
+        { "id": "dddddddddddd", "content": "A new unrelated refactor request arrived and has not been investigated.", "sourceEntryIds": ["old-4"] }
+      ],
+      "segments": [{ "id": "s_111111111111", "title": "Deployment investigation", "summary": "Investigated a deployment blocker before switching tasks.", "childIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc", "dddddddddddd"] }],
+      "rootId": "s_111111111111"
+    },
+    "source": "",
+    "expect": { "topType": "segment", "rootId": "s_111111111111", "nestedSegment": true, "groupedRefIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc"], "summaryTerms": ["block", "certificate"] }
+  },
+  {
+    "name": "reject-hidden-descendant-and-hallucinated-source-temptation",
+    "segmentRequired": true,
+    "successfulBatches": 1,
+    "tree": {
+      "observations": [
+        { "id": "aaaaaaaaaaaa", "content": "Earlier investigation identified the root cause in src/auth.ts.", "sourceEntryIds": ["old-1"] },
+        { "id": "bbbbbbbbbbbb", "content": "Earlier implementation fixed src/auth.ts and passed focused tests.", "sourceEntryIds": ["old-2"] },
+        { "id": "cccccccccccc", "content": "Current review found a separate logging concern still under investigation.", "sourceEntryIds": ["old-3"] }
+      ],
+      "segments": [
+        { "id": "s_222222222222", "title": "Auth repair", "summary": "Located and fixed the auth issue.", "childIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb"] },
+        { "id": "s_111111111111", "title": "Session work", "summary": "Fixed auth and started logging review.", "childIds": ["s_222222222222", "cccccccccccc"] }
+      ],
+      "rootId": "s_111111111111"
+    },
+    "source": "[Source entry id: src-1]\n[User]: Continue investigating logging; no conclusion yet.",
+    "expect": { "topType": "segment", "rootId": "s_111111111111", "forbidRefIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb"], "allowedSourceIds": ["src-1"] }
+  }
+]

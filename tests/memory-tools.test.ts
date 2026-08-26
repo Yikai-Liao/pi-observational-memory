@@ -7,8 +7,8 @@ import { inspectNode } from "../src/memory-tree/inspect.js";
 import { MemoryTreeStore } from "../src/memory-tree/store.js";
 import { OM_OBSERVATIONS_RECORDED, type Entry } from "../src/memory-tree/types.js";
 import { SessionCatalog } from "../src/sessions/catalog.js";
-import { registerOmReadTool } from "../src/tools/om-read.js";
-import { registerOmSessionsTool } from "../src/tools/om-sessions.js";
+import { normalizeOmReadArguments, registerOmReadTool } from "../src/tools/om-read.js";
+import { normalizeOmSessionsArguments, registerOmSessionsTool } from "../src/tools/om-sessions.js";
 
 const entries = (): Entry[] => {
 	const a = { id: "aaaaaaaaaaaa", content: "Investigated the detailed release issue and located the durable root cause.", sourceEntryIds: ["raw-a"] };
@@ -58,6 +58,11 @@ describe("SessionCatalog", () => {
 });
 
 describe("memory tools", () => {
+	it("normalizes Luna-filled optional arguments to documented defaults", () => {
+		expect(normalizeOmReadArguments({ sessionId: "current", nodeId: null, outputPath: null, depth: 1 })).toEqual({ depth: 1 });
+		expect(normalizeOmSessionsArguments({ path: "", keywords: null })).toEqual({});
+	});
+
 	it("registers discovery and writes complete om_read output", async () => {
 		const tools: any[] = [];
 		const pi = { registerTool: (tool: any) => tools.push(tool) } as any;

@@ -118,14 +118,27 @@ Do not create a Segment that:
 - Wraps every Root child into one new child and leaves the Root with only that child.
 
 Segment fields:
-- title: one short navigation line, at most 120 characters.
-- summary: one plain-text paragraph, at most 2000 characters. State what happened, result/current state, key decisions and reasons, and still-valid blockers. Do not write "next we will" in place of history.
+- title: one short navigation label, at most 120 characters.
+- summary: one compressed plain-text paragraph, at most 2000 characters. State what happened, result/current state, key decisions/reasons, and still-valid blockers without restating every child sentence.
+- The rendered Segment is [id] + title + summary. It MUST be strictly shorter than the sum of rendering its direct children. This is a hard acceptance check, not a stylistic preference.
+- For exactly two short children, make title plus summary extremely concise—aim below half the children's combined content characters. Prefer "Repository requirements" + "Use pnpm; minimum Node.js 22." over a full sentence that repeats both Observations.
+- Root follows the same compression rule. A new Root with two children still needs a genuinely compressed title/summary even though Root covers the Session.
+- Do not write "next we will" in place of history.
 
 SEGMENT REQUIRED policy:
 - no: preserve the current organization. Add valid new Observations and perform only a mandatory Root lifecycle transition.
-- yes: actively check for coherent closed consecutive ranges. You may create multiple nested, non-balanced Segments in this one proposal. Keep the newest still-developing work shallow when it cannot yet be summarized honestly.
-- If no honest nested grouping improves the tree, do not force one. A same-ID Root update is still a completed segmentation check.
+- yes is an instruction to inspect ALL current Root children, not merely permission to segment. If two or more consecutive Root children clearly form a coherent closed historical phase, you MUST create a new nested Segment for that range in this proposal.
+- NEW SOURCE may be empty while old Root children still require grouping. Empty NEW SOURCE is not a reason to return an empty children increment.
+- You may create multiple nested, non-balanced Segments in one proposal. Keep the newest still-developing work shallow when it cannot yet be summarized honestly.
+- A failed or blocked investigation followed by a task switch is a closed historical phase when its checks, current result, and blocker can be summarized truthfully; group it rather than waiting for success.
+- Only when no qualifying consecutive range exists may the completed check make no structural change. In that case a same-ID Root update with children=[] is valid because omitted old children remain.
 - If NEW SOURCE is empty but a Segment Root exists and SEGMENT REQUIRED is yes, submit that same-ID Root update rather than tree=null.
+
+Required grouping example:
+Current Root children are A, B, C, D. A investigated an auth bug, B implemented the fix, C verified it, and D is an unrelated documentation review still in progress. SEGMENT REQUIRED is yes. Return the same Root id with children containing a new ID-less Segment(ref A, ref B, ref C), followed optionally by ref D as an order anchor. Do not return children=[] because A-B-C are already a coherent closed range.
+
+Blocked-phase example:
+A checked DNS, B found expired TLS, C recorded that deployment remains blocked, and D starts unrelated work. Group A-B-C into a closed investigation Segment whose summary preserves the blocker; leave D shallow.
 
 Final silent checklist:
 - Exactly one submit_memory_tree call and no prose response.

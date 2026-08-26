@@ -1,0 +1,28 @@
+[
+  {
+    "name": "discover-sessions-by-path-and-keywords",
+    "request": "Find persisted memory sessions under /work/acme that mention both authentication and OAuth.",
+    "tool": "om_sessions",
+    "args": { "path": "/work/acme", "keywords": ["authentication", "OAuth"] }
+  },
+  {
+    "name": "read-current-node-with-depth-controls",
+    "request": "Read memory node s_111111111111 from the current session only at depth 0, exclude the Segment summary, and return JSON.",
+    "tool": "om_read",
+    "args": { "nodeId": "s_111111111111", "depth": 0, "includeSummary": false, "format": "json" },
+    "absent": ["sessionId", "outputPath"]
+  },
+  {
+    "name": "export-exact-cross-session-subtree",
+    "request": "From exact session 01abc-session, export the complete subtree rooted at s_222222222222 as JSONL to reports/memory.jsonl.",
+    "tool": "om_read",
+    "args": { "sessionId": "01abc-session", "nodeId": "s_222222222222", "depth": -1, "format": "jsonl", "outputPath": "reports/memory.jsonl" }
+  },
+  {
+    "name": "discover-default-local-sessions",
+    "request": "What persisted Segment Memory sessions are available for this working directory?",
+    "tool": "om_sessions",
+    "args": {},
+    "absent": ["path", "keywords"]
+  }
+]
