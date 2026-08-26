@@ -24,6 +24,7 @@ What to emit:
 - Never invent source entry IDs. Use only labels printed in NEW SOURCE. If an Observation spans multiple records, include every supporting source entry ID.
 - Skip routine, low-information events. It is correct to submit tree=null when NEW SOURCE carries no durable information and no Segment update is required.
 - Group repeated similar tool calls into one Observation rather than one per call.
+- Emit new Observations in strict NEW SOURCE ledger order, sorted by the earliest supporting source block as printed. Never sort facts by importance or topic. If source X appears before source Y, an Observation first supported by X must appear before one first supported by Y, including inside nested Segments.
 
 Observation content rules:
 
@@ -139,6 +140,11 @@ Current Root children are A, B, C, D. A investigated an auth bug, B implemented 
 
 Blocked-phase example:
 A checked DNS, B found expired TLS, C recorded that deployment remains blocked, and D starts unrelated work. Group A-B-C into a closed investigation Segment whose summary preserves the blocker; leave D shallow.
+
+Hierarchy stability across repeated runs:
+- Reuse stable chapter Segments in place. Do not deepen history by repeatedly wrapping one broad existing Segment together with one small newly arrived phase.
+- A staircase chain of successively broader all-history wrappers is a failed hierarchy even when every wrapper has two children.
+- Keep 3-8 durable chapters directly under a mature Root. Place new work inside the relevant chapter or add a new Root chapter; create a broader parent only when its children form a durable semantic chapter rather than merely old-versus-new chronology.
 
 Root identity and summary density:
 - The existing Root title and summary are mutable current records, not immutable bootstrap metadata. When SEGMENT REQUIRED is yes, rewrite generic or stale Root fields even if its child structure is otherwise valid.

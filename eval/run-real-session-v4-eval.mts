@@ -17,6 +17,8 @@ import { OBSERVER_SYSTEM } from "../src/agents/observer/prompts.ts";
 import { OBSERVER_TOOL_SCHEMA, buildObserverUserPrompt } from "../src/agents/observer/protocol.ts";
 import { applyObserverProposal } from "../src/memory-tree/store.ts";
 import { maxTreeDepth, renderMemoryTree } from "../src/memory-tree/render.ts";
+import { isSourceEntry } from "../src/progress.ts";
+import { serializeSourceAddressedBranchEntries } from "../src/serialize.ts";
 import { estimateStringTokens } from "../src/tokens.ts";
 import type { Entry, MemoryTree, Node, NodeProposal, Observation, Segment, SegmentId } from "../src/memory-tree/types.ts";
 
@@ -24,13 +26,19 @@ const CANARY = process.argv.includes("--canary");
 const OUTPUT_ROOT = process.env.REAL_SESSION_EVAL_OUTPUT ?? join(homedir(), CANARY ? "v4-real-session-eval-canary" : "v4-real-session-eval");
 const ENDPOINT = process.env.EVAL_ENDPOINT ?? "https://lyric-openai-qiyin.services.ai.azure.com/openai/v1";
 const MODEL = process.env.EVAL_MODEL ?? "gpt-5.6-luna-2";
+const SYSTEM_PROMPT = process.env.EVAL_PROMPT_FILE ? await readFile(process.env.EVAL_PROMPT_FILE, "utf8") : OBSERVER_SYSTEM;
 const MAX_ROUNDS = 6;
 type Selection = { id: string; label: string; activeObservationIds: string[]; droppedObservationIds: string[] };
 const SELECTIONS = (JSON.parse(await readFile(new URL("./real-session-v3-selection.json", import.meta.url), "utf8")) as { sessions: Selection[] }).sessions;
 const SESSION_IDS = SELECTIONS.map((item) => item.id);
 const ALL_LEVELS = ["low", "medium", "high"] as const;
 type Level = typeof ALL_LEVELS[number];
-const LEVELS: readonly Level[] = CANARY ? ["medium"] : ALL_LEVELS;
+const LEVELS = (CANARY ? ["medium"] : (process.env.EVAL_LEVELS?.split(",") ?? ALL_LEVELS)) as Level[];
+if (LEVELS.some((level) => !ALL_LEVELS.includes(level))) throw new Error(`Invalid EVAL_LEVELS: ${LEVELS.join(",")}`);
+const ALL_MODES = ["progressive", "posthoc-single", "posthoc-iterative", "raw-v4"] as const;
+type Mode = typeof ALL_MODES[number];
+const MODES = (process.env.EVAL_MODES?.split(",") ?? ALL_MODES) as Mode[];
+if (MODES.some((mode) => !ALL_MODES.includes(mode))) throw new Error(`Invalid EVAL_MODES: ${MODES.join(",")}`);
 type V3Observation = Observation & { timestamp?: string; relevance?: string; tokenCount?: number };
 type Prepared = {
   info: any;
@@ -38,6 +46,7 @@ type Prepared = {
   allObservations: V3Observation[];
   activeObservations: V3Observation[];
   activeBatches: V3Observation[][];
+  sourceBatches: Entry[][];
   droppedObservationIds: Set<string>;
   dir: string;
   seed: MemoryTree;
@@ -45,7 +54,7 @@ type Prepared = {
 type Generated = {
   prepared: Prepared;
   level: Level;
-  mode: "progressive" | "posthoc-single" | "posthoc-iterative";
+  mode: Mode;
   tree: MemoryTree;
   rounds: number;
   warnings: string[];
@@ -178,6 +187,27 @@ function foldV3(branch: Entry[]): { all: V3Observation[]; active: V3Observation[
   };
 }
 
+function sourceBatchesAtFrozenV3Cadence(branch: Entry[], frozen: Set<string>): Entry[][] {
+  const batches: Entry[][] = [];
+  const seenObservationIds = new Set<string>();
+  let pending: Entry[] = [];
+  for (const entry of branch as any[]) {
+    if (isSourceEntry(entry)) pending.push(entry);
+    if (entry.type !== "custom" || entry.customType !== "om.observations.recorded" || !Array.isArray(entry.data?.observations)) continue;
+    let closesBatch = false;
+    for (const item of entry.data.observations) {
+      if (!/^[a-f0-9]{12}$/.test(item?.id ?? "") || seenObservationIds.has(item.id)) continue;
+      seenObservationIds.add(item.id);
+      if (frozen.has(item.id)) closesBatch = true;
+    }
+    if (closesBatch && pending.length > 0) {
+      batches.push(pending);
+      pending = [];
+    }
+  }
+  return batches;
+}
+
 function seedTree(sessionId: string, active: V3Observation[], branch: Entry[]): MemoryTree {
   const ranks = new Map(branch.map((entry, index) => [entry.id, index]));
   const normalized = active.map((item, firstSeen) => ({
@@ -216,13 +246,19 @@ function topology(tree: MemoryTree): string {
   return JSON.stringify({ root: tree.root?.id, segments: [...tree.segmentsById.values()].sort((a, b) => a.id.localeCompare(b.id)).map((item) => [item.id, item.childIds]) });
 }
 
-async function responseCall(apiKey: string, level: Level, tree: MemoryTree): Promise<{ proposal: NodeProposal | null; usage: any }> {
+async function responseCall(
+  apiKey: string,
+  level: Level,
+  tree: MemoryTree,
+  chunk = "",
+  segmentRequired = true,
+): Promise<{ proposal: NodeProposal | null; usage: any }> {
   const body = {
     model: MODEL,
     reasoning: { effort: level },
     input: [
-      { role: "system", content: [{ type: "input_text", text: OBSERVER_SYSTEM }] },
-      { role: "user", content: [{ type: "input_text", text: buildObserverUserPrompt({ tree, chunk: "", segmentRequired: true, successfulBatches: tree.observationBatchesSinceSegmentation }) }] },
+      { role: "system", content: [{ type: "input_text", text: SYSTEM_PROMPT }] },
+      { role: "user", content: [{ type: "input_text", text: buildObserverUserPrompt({ tree, chunk, segmentRequired, successfulBatches: tree.observationBatchesSinceSegmentation }) }] },
     ],
     tools: [{ type: "function", name: "submit_memory_tree", description: "Submit the single recursive Segment Memory Tree increment for this Observer run.", parameters: OBSERVER_TOOL_SCHEMA }],
     tool_choice: { type: "function", name: "submit_memory_tree" },
@@ -352,6 +388,44 @@ async function generateProgressive(prepared: Prepared, level: Level, apiKey: str
   return { prepared, level, mode: "progressive", tree, rounds, warnings, usage };
 }
 
+async function generateRawV4(prepared: Prepared, level: Level, apiKey: string): Promise<Generated> {
+  let tree = emptyTree();
+  let pending: Entry[] = [];
+  const warnings: string[] = [];
+  const usage = { inputTokens: 0, outputTokens: 0 };
+  let rounds = 0;
+
+  const observe = async (forced: boolean) => {
+    const serialized = serializeSourceAddressedBranchEntries(pending);
+    const segmentRequired = forced || tree.observationBatchesSinceSegmentation + 1 >= 2;
+    rounds++;
+    const response = await responseCall(apiKey, level, tree, serialized.text, segmentRequired);
+    const beforeCount = tree.observationsById.size;
+    const result = applyObserverProposal(tree, response.proposal, prepared.branch, {
+      allowedSourceEntryIds: serialized.sourceEntryIds,
+      coversUpToId: serialized.sourceEntryIds.at(-1),
+      segmentRequested: segmentRequired,
+    });
+    const newObservationCount = result.tree.observationsById.size - beforeCount;
+    const next = structuredClone(result.tree) as MemoryTree;
+    if (result.data?.segmentCheck === "complete") next.observationBatchesSinceSegmentation = 0;
+    else if (result.data?.segmentCheck === "partial") next.observationBatchesSinceSegmentation = Math.max(1, next.observationBatchesSinceSegmentation);
+    else if (newObservationCount > 0) next.observationBatchesSinceSegmentation++;
+    tree = next;
+    if (result.data?.coversUpToId) pending = [];
+    warnings.push(...result.warnings.map((warning) => `call ${rounds}: ${warning}`));
+    usage.inputTokens += Number(response.usage.input_tokens ?? 0);
+    usage.outputTokens += Number(response.usage.output_tokens ?? 0);
+  };
+
+  for (const batch of prepared.sourceBatches) {
+    pending.push(...batch);
+    await observe(false);
+  }
+  await observe(true);
+  return { prepared, level, mode: "raw-v4", tree, rounds, warnings, usage };
+}
+
 async function generateDirect(prepared: Prepared, level: Level, apiKey: string): Promise<Generated> {
   const usage = { inputTokens: 0, outputTokens: 0 };
   let segmentCounter = 0;
@@ -417,9 +491,9 @@ function treeMarkdown(result: Generated): string {
     `- Model: \`${MODEL}\``,
     `- Reasoning effort: \`${result.level}\``,
     `- Build mode: \`${result.mode}\``,
-    `- Input mode: fixed active V3 Observations; ${result.mode === "progressive" ? "replayed in original V3 record batches with segmentation every two batches plus one final forced call" : result.mode === "posthoc-single" ? "all leaves supplied before one Observer call" : "all leaves supplied before independent Observer calls repeated until topology stabilized or six calls"}.`,
+    `- Input mode: ${result.mode === "raw-v4" ? "original source entries replayed at frozen V3 cadence; V4 generated both Observations and Segments" : `fixed active V3 Observations; ${result.mode === "progressive" ? "replayed in original V3 record batches with segmentation every two batches plus one final forced call" : result.mode === "posthoc-single" ? "all leaves supplied before one Observer call" : "all leaves supplied before independent Observer calls repeated until topology stabilized or six calls"}`}.`,
     `- Observer calls: ${result.rounds}`,
-    `- Observations: ${m.observations} (fixed)`,
+    `- Observations: ${m.observations}${result.mode === "raw-v4" ? " (generated by V4)" : " (fixed)"}`,
     `- Segments: ${m.segments}`,
     `- Maximum depth: ${m.maxDepth}`,
     `- Root direct children: ${m.rootChildren}`,
@@ -454,7 +528,7 @@ if (CANARY) await rm(OUTPUT_ROOT, { recursive: true, force: true });
 await mkdir(OUTPUT_ROOT, { recursive: true });
 const infos = await SessionManager.listAll();
 const prepared: Prepared[] = [];
-const selectedIds = CANARY ? [SELECTIONS.find((item) => item.label === "swarm-forge")!.id] : SESSION_IDS;
+const selectedIds = process.env.EVAL_SESSION_IDS?.split(",") ?? (CANARY ? [SELECTIONS.find((item) => item.label === "swarm-forge")!.id] : SESSION_IDS);
 for (const id of selectedIds) {
   const info = infos.find((candidate: any) => candidate.id === id);
   if (!info) throw new Error(`Session ${id} not found`);
@@ -476,6 +550,7 @@ for (const id of selectedIds) {
     allObservations: folded.all,
     activeObservations,
     activeBatches,
+    sourceBatches: sourceBatchesAtFrozenV3Cadence(branch, frozen),
     droppedObservationIds: new Set(selection.droppedObservationIds),
     dir,
     seed: seedTree(id, activeObservations, branch),
@@ -489,23 +564,22 @@ if (!process.env.API_KEY) process.loadEnvFile(fileURLToPath(new URL("../.env", i
 const apiKey = process.env.API_KEY;
 if (!apiKey) throw new Error("API_KEY is missing after loading .env");
 
-const tasks = prepared.flatMap((item) => LEVELS.flatMap((level) => [
-  { item, level, mode: "progressive" as const },
-  { item, level, mode: "posthoc-single" as const },
-  { item, level, mode: "posthoc-iterative" as const },
-]));
+const tasks = prepared.flatMap((item) => LEVELS.flatMap((level) => MODES.map((mode) => ({ item, level, mode }))));
 const generated = await mapLimit(tasks, 3, async ({ item, level, mode }) => {
   console.error(`Generating ${item.info.id} ${level} ${mode}...`);
   const result = mode === "progressive"
     ? await generateProgressive(item, level, apiKey)
     : mode === "posthoc-single"
       ? await generateDirect(item, level, apiKey)
-      : await generateIterative(item, level, apiKey);
+      : mode === "posthoc-iterative"
+        ? await generateIterative(item, level, apiKey)
+        : await generateRawV4(item, level, apiKey);
   const suffix = mode === "progressive" ? "" : `-${mode}`;
   await writeFile(join(item.dir, `v4-tree-${level}${suffix}.md`), treeMarkdown(result), "utf8");
   return result;
 });
 for (const result of generated) {
+  if (result.mode === "raw-v4") continue;
   const expected = new Set(result.prepared.activeObservations.map((item) => item.id));
   const actual = new Set(result.tree.observationsById.keys());
   if (expected.size !== actual.size || [...expected].some((id) => !actual.has(id))) {
@@ -521,17 +595,23 @@ const metricTable = [
     return `| ${basename(result.prepared.info.cwd)} (${result.prepared.info.id.slice(0, 8)}) | ${result.level} | ${result.mode} | ${m.observations} | ${m.segments} | ${m.maxDepth} | ${m.rootChildren} | ${m.groupedLeaves} | ${m.compressionPercent}% | ${result.warnings.length} | ${result.rounds} |`;
   }),
 ].join("\n");
+const rawOnly = MODES.length === 1 && MODES[0] === "raw-v4";
 const report = [
-  `# V4 fixed-V3-leaf ${CANARY ? "canary" : "evaluation"} report`,
+  `# V4 ${rawOnly ? "raw-source" : "fixed-V3-leaf"} ${CANARY ? "canary" : "evaluation"} report`,
   "",
   "## Method",
   "",
-  `- Selected Sessions: ${prepared.map((item) => `${basename(item.info.cwd)}: ${item.activeObservations.length} active Observations in ${item.activeBatches.length} retained V3 batches`).join("; ")}.`,
-  "- V3 first-valid-record-wins folding and Dropper tombstones produced immutable active leaves; every output leaf set was checked for exact identity.",
-  "- Progressive mode replays retained V3 record batches, calls Observer after every two batches, and makes one final forced call.",
-  "- Post-hoc single mode supplies all fixed leaves before exactly one Observer call.",
-  "- Post-hoc iterative mode is an independent sample that repeats from the full flat Root until topology stabilizes or six calls.",
-  "- Original conversations were exported locally but were not sent to the API.",
+  `- Selected Sessions: ${prepared.map((item) => `${basename(item.info.cwd)}: ${item.activeObservations.length} active V3 Observations in ${item.activeBatches.length} retained batches`).join("; ")}.`,
+  ...(rawOnly ? [
+    "- Original source entries were replayed at the frozen V3 batch boundaries; V3 Observation content was not sent to the model.",
+    "- V4 generated both source-backed Observation leaves and Segment hierarchy, checked by production normalization and strict tree validation.",
+  ] : [
+    "- V3 first-valid-record-wins folding and Dropper tombstones produced immutable active leaves; every output leaf set was checked for exact identity.",
+    "- Progressive mode replays retained V3 record batches, calls Observer after every two batches, and makes one final forced call.",
+    "- Post-hoc single mode supplies all fixed leaves before exactly one Observer call.",
+    "- Post-hoc iterative mode repeats from the full flat Root until topology stabilizes or six calls.",
+    "- Original conversations were exported locally but were not sent to the API.",
+  ]),
   `- ${MODEL} used the production V4 prompt, tool schema, proposal normalization, invariant validation, and unlimited-depth renderer; API concurrency was capped at three.`,
   "",
   "## Structural metrics",

@@ -320,10 +320,15 @@ export function applyObserverProposal(
 		if (!isSegment(base.root) || newObservations.length === 0) {
 			return { tree: base, warnings };
 		}
-		const root: Segment = { ...base.root, childIds: [...base.root.childIds, ...newObservations.map((item) => item.id)] };
-		const fallbackRecords: Node[] = [...newObservations, root];
+		const sourcePositions = new Map(entries.map((entry, position) => [entry.id, position]));
+		const orderedObservations = [...newObservations].sort((a, b) =>
+			Math.min(...a.sourceEntryIds.map((id) => sourcePositions.get(id) ?? Number.MAX_SAFE_INTEGER))
+			- Math.min(...b.sourceEntryIds.map((id) => sourcePositions.get(id) ?? Number.MAX_SAFE_INTEGER)),
+		);
+		const root: Segment = { ...base.root, childIds: [...base.root.childIds, ...orderedObservations.map((item) => item.id)] };
+		const fallbackRecords: Node[] = [...orderedObservations, root];
 		const fallback = cloneTree(base);
-		for (const observation of newObservations) fallback.observationsById.set(observation.id, observation);
+		for (const observation of orderedObservations) fallback.observationsById.set(observation.id, observation);
 		fallback.segmentsById.set(root.id, root);
 		try {
 			const firstSeen = new Map<NodeId, number>();
@@ -333,7 +338,7 @@ export function applyObserverProposal(
 			}
 			const published = validateAndPublish(fallback, entries, firstSeen);
 			warnings.push("rejected structural update; appended valid observations as Root children");
-			return eventResult(published, entries, fallbackRecords, newObservations, warnings, options);
+			return eventResult(published, entries, fallbackRecords, orderedObservations, warnings, options);
 		} catch {
 			return { tree: base, warnings };
 		}

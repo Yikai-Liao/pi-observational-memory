@@ -5,14 +5,14 @@
   "prompt": "production before hierarchy changes",
   "casesPassed": 0,
   "casesTotal": 6,
-  "checksPassed": 46,
-  "checksTotal": 66,
+  "checksPassed": 58,
+  "checksTotal": 78,
   "results": [
     {
       "name": "swarm-call-04-architecture-and-operations",
       "passed": false,
-      "checksPassed": 8,
-      "checksTotal": 11,
+      "checksPassed": 10,
+      "checksTotal": 13,
       "failures": [
         "Root title missing: SwarmForge",
         "Root metadata missing: handoff, dashboard",
@@ -32,8 +32,8 @@
     {
       "name": "swarm-call-12-pi-decision-and-dashboard-blockers",
       "passed": false,
-      "checksPassed": 8,
-      "checksTotal": 11,
+      "checksPassed": 10,
+      "checksTotal": 13,
       "failures": [
         "Root title missing: SwarmForge, Pi",
         "Root metadata missing: extension, dashboard",
@@ -53,11 +53,11 @@
     {
       "name": "orchestra-call-06-diagnosis-and-first-fix",
       "passed": false,
-      "checksPassed": 8,
-      "checksTotal": 11,
+      "checksPassed": 10,
+      "checksTotal": 13,
       "failures": [
         "Root title missing: release, routing",
-        "Root metadata missing: manual, RC, trigger",
+        "Root metadata missing: manual, RC",
         "Root summary too short: 31 < 110"
       ],
       "warnings": [],
@@ -74,8 +74,8 @@
     {
       "name": "orchestra-call-16-frontend-and-backend-chapters",
       "passed": false,
-      "checksPassed": 8,
-      "checksTotal": 11,
+      "checksPassed": 10,
+      "checksTotal": 13,
       "failures": [
         "Root title missing: release, frontend, backend",
         "Root metadata missing: RC, PR #498, duplicate",
@@ -95,11 +95,11 @@
     {
       "name": "memory-call-12-validation-and-publication",
       "passed": false,
-      "checksPassed": 7,
-      "checksTotal": 11,
+      "checksPassed": 9,
+      "checksTotal": 13,
       "failures": [
         "Root title missing: Segment Memory, V4",
-        "Root metadata missing: validation, documentation",
+        "Root metadata missing: V4, release",
         "Root summary too short: 42 < 140",
         "tree depth 2 < 3"
       ],
@@ -117,8 +117,8 @@
     {
       "name": "memory-call-32-test-contract-expansion",
       "passed": false,
-      "checksPassed": 7,
-      "checksTotal": 11,
+      "checksPassed": 9,
+      "checksTotal": 13,
       "failures": [
         "Root title missing: Segment Memory, V4",
         "Root metadata missing: audit, coverage",

@@ -153,10 +153,13 @@ function evaluate(test, base, normalized) {
   const missingRootSummary = includesTerms(`${root.title} ${root.summary}`, test.expect.rootSummaryTerms);
   check(missingRootSummary.length === 0, `Root metadata missing: ${missingRootSummary.join(", ")}`);
   check(root.summary.length >= test.expect.minRootSummaryChars, `Root summary too short: ${root.summary.length} < ${test.expect.minRootSummaryChars}`);
+  check(root.childIds.length >= test.expect.minRootChildren, `Root has ${root.childIds.length} children < ${test.expect.minRootChildren}`);
   check(root.childIds.length <= test.expect.maxRootChildren, `Root has ${root.childIds.length} children > ${test.expect.maxRootChildren}`);
   const rootObservations = root.childIds.filter((id) => tree.observationsById.has(id)).length;
   check(rootObservations <= test.expect.maxRootObservations, `Root has ${rootObservations} direct Observations > ${test.expect.maxRootObservations}`);
-  check(maxTreeDepth(tree) >= test.expect.minDepth, `tree depth ${maxTreeDepth(tree)} < ${test.expect.minDepth}`);
+  const depth = maxTreeDepth(tree);
+  check(depth >= test.expect.minDepth, `tree depth ${depth} < ${test.expect.minDepth}`);
+  check(depth <= test.expect.maxDepth, `tree depth ${depth} > ${test.expect.maxDepth}`);
 
   for (const expected of test.expect.groups) {
     const candidates = [...tree.segmentsById.values()]

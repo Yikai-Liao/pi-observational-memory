@@ -67,7 +67,9 @@
           "minChars": 55,
           "minLeavesLarge": 12,
           "minCharsLarge": 85
-        }
+        },
+        "minRootChildren": 3,
+        "maxDepth": 4
       }
     },
     {
@@ -151,7 +153,9 @@
           "minChars": 55,
           "minLeavesLarge": 12,
           "minCharsLarge": 85
-        }
+        },
+        "minRootChildren": 3,
+        "maxDepth": 4
       }
     },
     {
@@ -208,8 +212,7 @@
         ],
         "rootSummaryTerms": [
           "manual",
-          "RC",
-          "trigger"
+          "RC"
         ],
         "minRootSummaryChars": 110,
         "maxRootChildren": 8,
@@ -221,7 +224,9 @@
           "minChars": 55,
           "minLeavesLarge": 12,
           "minCharsLarge": 85
-        }
+        },
+        "minRootChildren": 3,
+        "maxDepth": 4
       }
     },
     {
@@ -387,14 +392,16 @@
         "minRootSummaryChars": 130,
         "maxRootChildren": 8,
         "maxRootObservations": 2,
-        "minDepth": 4,
+        "minDepth": 3,
         "groups": [],
         "summaryDensity": {
           "minLeaves": 6,
           "minChars": 55,
           "minLeavesLarge": 12,
           "minCharsLarge": 85
-        }
+        },
+        "minRootChildren": 3,
+        "maxDepth": 4
       }
     },
     {
@@ -480,8 +487,8 @@
           "V4"
         ],
         "rootSummaryTerms": [
-          "validation",
-          "documentation"
+          "V4",
+          "release"
         ],
         "minRootSummaryChars": 140,
         "maxRootChildren": 8,
@@ -493,7 +500,9 @@
           "minChars": 55,
           "minLeavesLarge": 12,
           "minCharsLarge": 85
-        }
+        },
+        "minRootChildren": 3,
+        "maxDepth": 4
       }
     },
     {
@@ -665,7 +674,9 @@
           "minChars": 55,
           "minLeavesLarge": 12,
           "minCharsLarge": 85
-        }
+        },
+        "minRootChildren": 3,
+        "maxDepth": 4
       }
     }
   ]

@@ -201,6 +201,31 @@ describe("applyObserverProposal", () => {
 		expect((result.tree.root as Segment).childIds).toEqual([a.id, b.id, "cccccccccccc", "dddddddddddd"]);
 	});
 
+	it("preserves valid new Observations in source order when a structural proposal is rejected", () => {
+		const a = observation("aaaaaaaaaaaa", "raw-a");
+		const b = observation("bbbbbbbbbbbb", "raw-b");
+		const root = segment("s_111111111111", [a.id, b.id], "Root", "Done.");
+		const entries = [source("raw-a"), source("raw-b"), event("initial", [a, b, root], "raw-b"), source("raw-c"), source("raw-d")];
+		const ids = ["dddddddddddd", "cccccccccccc"];
+		const result = applyObserverProposal(new MemoryTreeStore().rebuild(entries), {
+			type: "segment", id: root.id, title: root.title, summary: root.summary,
+			children: [
+				{ type: "observation", content: "The later source recorded a durable result.", sourceEntryIds: ["raw-d"] },
+				{ type: "observation", content: "The earlier source recorded a durable decision.", sourceEntryIds: ["raw-c"] },
+			],
+		}, entries, {
+			allowedSourceEntryIds: ["raw-c", "raw-d"], coversUpToId: "raw-d", segmentRequested: true,
+			createObservationId: () => ids.shift()!,
+		});
+
+		expect(result.warnings).toEqual(expect.arrayContaining([
+			"observation leaf order does not match source ledger order",
+			"rejected structural update; appended valid observations as Root children",
+		]));
+		expect((result.tree.root as Segment).childIds).toEqual([a.id, b.id, "cccccccccccc", "dddddddddddd"]);
+		expect(result.data?.nodeRecords.slice(0, 2).map((record) => record.id)).toEqual(["cccccccccccc", "dddddddddddd"]);
+	});
+
 	it("falls back to existing Root fields and keeps partial cadence after invalid fields", () => {
 		const a = observation("aaaaaaaaaaaa", "raw-a");
 		const b = observation("bbbbbbbbbbbb", "raw-b");

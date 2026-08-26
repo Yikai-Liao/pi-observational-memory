@@ -5,5 +5,5 @@ round2	Root identity and summary density	0/7	105/149	keep	Generic Root titles we
 round3	safe recursive construction procedure	0/7	68/149	revert	Extra six-step construction instructions made large proposals more conservative and caused three flat fallbacks.
 round4	tree shape metadata	0/7	83/149;89/149	revert	Two repeats exposed root counts and subtree sizes but did not improve robustness; large cases still produced overlap/non-expansion fallbacks.
 round5	recursive function schema	0/7	80/149	revert	Replacing children:any with recursive Type.Module made Luna restate existing Observations instead of refs and produced 18 normalization warnings in one case.
-final-baseline	original prompt on six real-cadence fixtures	0/6	46/66	baseline	Pass@3 baseline after replacing synthetic wide-frontier cases with six actual two-batch Observer states.
-final	accepted production prompt on six real-cadence fixtures	6/6	66/66	keep	Pass@3; attempts used were 3,1,1,2,1,2. Accepted trees had depth 3,3,3,4,3,4 and 2-4 Root children.
+final-baseline	original prompt on six real-cadence fixtures	0/6	58/78	baseline	Pass@3 baseline after replacing synthetic wide-frontier cases with six actual two-batch Observer states and enforcing mature Root width plus a depth ceiling.
+final-stability	hierarchy completion, metadata density, and stable chapters	6/6	78/78	keep	Pass@3. A full pi-observational-memory progressive canary improved depth 13→7, Root children 2→4, and normalization warnings 37→15 versus the accepted prompt without the stability rule.
