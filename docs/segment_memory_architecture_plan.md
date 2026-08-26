@@ -1,7 +1,7 @@
 # Segment Memory Tree：插件架构设计与开发计划
 
-> 状态：目标设计与实施计划，不代表当前代码状态
-> 目标版本：下一代 Segment Memory（下文简称 V4）
+> 状态：V4 已实现；本文保留设计约束、验收标准与演进背景
+> 目标版本：Segment Memory V4
 > 依据：`ChatGPT - segment mem 头脑风暴.md`、`om_example.txt`、`segment_memory_tree.md`，并对照当前 V3 实现与 Pi 扩展、Session、Compaction API
 
 ## 1. 目标与范围

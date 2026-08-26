@@ -1,213 +1,162 @@
-# Concepts
+# Segment Memory concepts
 
-This page defines the V3 vocabulary used by `pi-observational-memory`.
+V4 stores one ordered tree per active Pi Session branch.
 
-## The big picture
+## Nodes
 
-Long Pi sessions eventually outgrow the model context window. Pi solves that by compacting older messages into a summary while keeping recent messages verbatim. This extension makes that summary more durable by maintaining a branch-local memory ledger while the session happens.
+### Observation
 
-In V3, the ledger is the source of truth. Compaction entries contain what the agent sees, but memory state is reconstructed by folding V3 ledger entries on the current branch.
-
-## Memory layers
-
-### Observations
-
-An observation is a timestamped event from the conversation.
-
-Shape:
+The smallest memory unit:
 
 ```ts
 type Observation = {
-  id: string;                 // deterministic 12-character lowercase hex id
-  content: string;            // single-line plain prose
-  timestamp: string;          // YYYY-MM-DD HH:MM
-  relevance: "low" | "medium" | "high" | "critical";
-  sourceEntryIds: string[];   // raw/source entries that support this observation
-  tokenCount: number;         // estimated content tokens
+  id: string;              // 12 lowercase hex characters
+  content: string;         // single-line plain prose
+  sourceEntryIds: string[];
 }
 ```
 
-Rendered in summaries/views:
+An Observation compresses explicit Pi source entries while preserving provenance. V4 does not persist timestamp, importance, or token-count fields.
 
-```md
-[d4e5f6a1b2c3] 2026-01-15 14:30 [high] User decided to switch from REST to GraphQL for the public API; motivation was reducing over-fetching on mobile clients.
-```
+### Segment
 
-Observations are written by the observer into `om.observations.recorded` ledger entries. They are factual event records, not durable conclusions.
-
-### Reflections
-
-A reflection is a durable conclusion distilled from observations: user preferences, project constraints, architectural decisions, recurring behavior, or long-lived facts.
-
-Shape:
+A summary of a coherent historical range:
 
 ```ts
-type Reflection = {
-  id: string;                         // deterministic 12-character lowercase hex id
-  content: string;                    // single-line plain prose
-  supportingObservationIds: string[]; // evidence observations
-  tokenCount: number;                 // estimated content tokens
+type Segment = {
+  id: `s_${string}`;
+  title: string;
+  summary: string;
+  childIds: string[];
 }
 ```
 
-Rendered:
+A Segment:
 
-```md
-[a1b2c3d4e5f6] User works at Acme Corp building Acme Dashboard on Next.js 15 with Supabase auth.
-```
+- has at least two direct children;
+- may mix Observations and Segments;
+- preserves descendant Observation order;
+- summarizes work that already happened, including failed or interrupted work;
+- is shorter to render than its direct children.
 
-Reflections are written by the reflector into `om.reflections.recorded` ledger entries. They should be fewer and more durable than observations; the reflector should not turn every observation into a reflection. The reflector receives each active observation with a deterministic coverage tier (`none`, `partial`, or `strong`) so it can review durable facts that are not yet preserved, but coverage is review context rather than a quota or automatic reflection rule.
+It is not a plan waiting for future children.
 
-A reflection's `supportingObservationIds` are downstream dropper coverage evidence. They should include all and only current observations whose durable meaning the reflection preserves with equivalent fidelity. False or inflated support ids can make later pruning look safer than it is.
+### Root
 
-### Drops
+Root is a tree position, not a node class:
 
-A drop is a tombstone for observation ids that should no longer be active memory. Drops are written by the dropper into `om.observations.dropped` ledger entries.
+1. no Observations: no Root;
+2. one Observation: that Observation is Root;
+3. two or more Observations: one Segment is the unique Root;
+4. later Root Segment versions keep the same ID.
 
-Dropping does not delete history. Dropped observations remain recallable from ledger history, but they are not active observations in projections.
+Every non-Root node has exactly one parent.
 
-## Actors
+## Ordered tree
 
-### Observer
+The tree is chronological at the leaves. Old work can be grouped repeatedly into deeper Segments while recent work remains shallow. Branches need not have equal depth.
 
-The observer runs asynchronously from `turn_end` when raw/source tokens after the latest observation coverage marker reach `observeAfterTokens`. After a deliberate empty result, it waits for another `observeAfterTokens` of source tokens before retrying the uncovered range.
+The current tree must be a tree, never a DAG:
 
-It receives an oldest-first chunk of raw/source entries, validates source ids, and appends a non-empty `om.observations.recorded` entry. Chunking targets a fixed 60,000 estimated tokens but always includes at least one entry, so a single oversized entry cannot stall coverage. If there is nothing worth recording, it writes no entry and leaves the raw range uncovered.
+- no shared child;
+- no repeated child;
+- no cycle;
+- no missing or unreachable node;
+- one unique Root;
+- every Observation appears exactly once in source-ledger order.
 
-### Reflector
+`MemoryTreeStore` owns these invariants. Renderers, commands, and tools consume only a validated tree.
 
-The reflector runs in the reflect/drop lane from `turn_end` when its raw-token clock reaches `reflectAfterTokens` and the observer is not due.
+## Append-only records
 
-It reads active observations and current reflections, then appends durable new reflections as `om.reflections.recorded`. Reflections must cite valid supporting observation ids. The reflector's coverage annotations describe current support state only; this first coverage-stewardship model does not repair historical coverage on existing reflections that already missed a supporting observation id.
-
-### Dropper
-
-The dropper runs only as post-reflection maintenance: after the reflector records non-empty same-turn reflections, the dropper may run if the folded active observation ledger is over `observationsPoolTargetTokens`. The dropper can see same-turn new reflections before deciding what to prune.
-
-The dropper can only drop active observation ids. It cannot rewrite or merge observations. Relevance is treated as importance/resistance rather than an absolute lock: `critical` observations are the highest-resistance candidates, but they can be dropped when the model judges that age, reflection coverage, supersession, redundancy, and semantic safety make removal from active memory safe. Its maximum drop count is computed from tokens over target converted to an approximate observation count, and the model may drop fewer or none.
-
-### Compaction hook
-
-The compaction hook runs during `session_before_compact`. When V3 memory exists, it is deterministic and model-free:
-
-- it does not run observer, reflector, or dropper;
-- it does not call a model;
-- it does not wait for background memory workers;
-- it folds/projects ledger state and renders the summary.
-
-If the projection is empty, the hook returns no extension compaction and Pi uses its native summarizer. This preserves pre-cut context instead of persisting an empty summary. Prepared V3 compactions remain effectively instantaneous compared with V2.
-
-## Ledger entries
-
-V3 uses three custom memory ledger entry types:
+Observer results are persisted as:
 
 ```ts
-om.observations.recorded: {
-  observations: Observation[];
-  coversUpToId: string;
-}
-
-om.reflections.recorded: {
-  reflections: Reflection[];
-  coversUpToId: string;
-}
-
-om.observations.dropped: {
-  observationIds: string[];
-  coversUpToId: string;
-}
-```
-
-The compaction hook writes V3 folded details on Pi compaction entries:
-
-```ts
-type MemoryDetails = {
-  type: "om.folded";
+customType: "om.observations.recorded"
+data: {
   version: 1;
-  fullFold: boolean;
-  observations: Observation[];
-  reflections: Reflection[];
+  nodeRecords: Array<Observation | Segment>;
+  coversUpToId?: string;
+  segmentCheck: "not_requested" | "complete" | "partial";
+  warnings?: string[];
 }
 ```
 
-Old V2 memory entry/details formats are ignored.
+A new logical ID creates a node. A later Segment record with the same ID updates its current projection. Observation records are immutable. Old records remain in Pi Session history.
 
-## `coversUpToId`
+Malformed V4 events fail replay explicitly. V2/V3 memory is outside the V4 compatibility boundary.
 
-`coversUpToId` is a progress watermark. It tells V3 where a worker's raw/source-token progress has reached.
+## Observer proposal
 
-It is not:
+One model request submits one recursive increment:
 
-- source provenance;
-- a dependency pointer;
-- proof that a later memory ledger entry caused another one.
+```ts
+type NodeProposal =
+  | { type: "ref"; id: string }
+  | { type: "observation"; content: string; sourceEntryIds: string[] }
+  | { type: "segment"; id?: `s_${string}`; title: string; summary: string; children: NodeProposal[] };
+```
 
-Source provenance lives on `Observation.sourceEntryIds` and `Reflection.supportingObservationIds`.
+- `ref`: unchanged current Root child;
+- ID-less Observation/Segment: new node, ID generated by code;
+- Segment with ID: new version of the current Root Segment.
 
-Progress counting uses raw/source tokens after the marker. Raw/source entries are `message`, `custom_message`, and `branch_summary` entries; memory ledger entries and compaction entries do not add raw-token progress.
+V1 Observer policy cannot update another existing Segment. The store's persisted format does not impose that producer restriction.
 
-## Visible, full, and drift
+## Cadence
 
-V3 distinguishes visible memory, full memory, and the drift between them:
+A batch means one successful Observer run that records at least one new Observation.
 
-- **Visible memory** — what the latest `om.folded` compaction details made visible to the agent. This is what `/om:view` shows by default.
-- **Full memory** — full V3 ledger truth folded at the branch tip. This is what `/om:view full` shows.
-- **Drift** — the difference between visible and full memory. Use `/om:status` to inspect visible-vs-full drift.
+- `segmentEveryObserverRuns` controls background Segment checks.
+- `complete` resets the batch count.
+- `partial` keeps segmentation due.
+- deliberate empty output, model failure, and validation rejection do not advance coverage or cadence.
+- every compaction forces a Segment check regardless of the count.
 
-Visible and full memory can differ intentionally. Background ledger work may happen after the latest compaction, and normal compactions may avoid re-folding reflection/drop effects until full-fold pressure requires it.
+## Depth rendering
 
-## Recall
+Rendering starts at Root depth `0`:
 
-`recall` is an agent-facing tool, not a search command. It takes a specific 12-character memory id and looks it up in V3 ledger history on the current branch.
+- visit an Observation: display it;
+- visit a Segment: display its heading and summary;
+- if Segment depth is below `memoryDepth`, display direct Observations and recursively visit child Segments;
+- at the limit, retain the Segment but stop expanding it.
 
-Recall can return:
+`memoryDepth: 0` displays only Root. Higher depths add descendants without removing visited ancestors.
 
-- an observation, marked `active` or `dropped`;
-- a reflection plus supporting observations;
-- a mixed result if an id collision exists;
-- missing/non-source diagnostics when source evidence is unavailable.
+Compaction details record only the selected depth and actual rendered node IDs:
 
-Use recall when compacted memory matters and exact source evidence is needed before acting.
+```ts
+{
+  type: "om.segment-tree.rendered";
+  version: 1;
+  memoryDepth: number;
+  renderedNodeIds: string[];
+}
+```
 
-## Relevance tiers
+There is no normal-path token planner or memory budget.
 
-Observation relevance is assigned by the observer:
+## Session identity and tools
 
-| Tier | Meaning |
-|---|---|
-| `critical` | User identity, explicit corrections, hard constraints, completed outcomes, or facts that require the strongest evidence before leaving active memory. |
-| `high` | Important decisions, non-trivial technical direction, unresolved blockers, key preferences. |
-| `medium` | Useful task-level context and ordinary progress. |
-| `low` | Routine status, tool acknowledgements, or details likely re-derivable from nearby context. |
+Session identity is Pi's exact Session ID. Name and cwd are display/discovery metadata, not identity.
 
-The dropper uses relevance as part of its judgment, but it is not the only signal and it is not a permanent active-memory pin. User assertions, exact decisions, unique identifiers, dated events, errors, and rationale should be preserved unless safely represented by durable reflections or newer memory. Dropping removes observations from active memory, not from ledger history; recall can still recover dropped observations when their ids are known.
+- `om_sessions` discovers local persisted sessions by directory boundary and optional Root keywords.
+- `om_read` reads Root or an exact node at a requested depth.
+- exact `sessionId` reads can cross cwd/repository boundaries.
+- JSONL exports one session record followed by flat node records with `parentId` and `position`.
 
-## V2 compatibility model
-
-V3 intentionally does not migrate V2 memory. Old V2 settings are ignored, old V2 custom entries/details are ignored, and rollback to V2 after creating V3 ledger entries should be treated as memory reset or visibility loss.
-
-When upgrading from V2, update settings and start a new clean session.
+Observation reads return provenance IDs but do not expand raw Session entries.
 
 ## Glossary
 
 | Term | Meaning |
 |---|---|
-| Branch | One path through Pi's session tree. V3 memory is branch-local. |
-| Ledger | Silent V3 custom memory entries folded from branch root to a point. |
-| Observation | Timestamped source-backed event record. |
-| Reflection | Durable conclusion backed by observations. |
-| Drop | Tombstone that removes an observation id from active memory. |
-| Visible memory | Latest folded memory visible to the agent through compaction details. |
-| Full memory | Full V3 ledger truth folded at branch tip or another boundary. |
-| Full fold | Compaction mode that folds observations, reflections, and drops through the boundary. |
-| Progress watermark | `coversUpToId`; marker used for raw-token progress clocks. |
-| Observer | Background agent that records observations. |
-| Reflector | Background agent that records durable reflections. |
-| Dropper | Background agent that drops active observations by id. |
-| Recall | Agent tool for exact evidence behind a memory id. |
-
-## Where to go next
-
-- [how-it-works.md](how-it-works.md) — runtime lifecycle and data flow.
-- [configuration.md](configuration.md) — V3 settings and migration table.
-- [../README.md](../README.md) — quick start and V2 upgrade notice.
+| Observation | Immutable source-backed leaf. |
+| Segment | Short summary over at least two ordered direct children. |
+| Root | Unique node with no parent. |
+| Record | Append-only persisted version of a node. |
+| Proposal | Recursive model output normalized before persistence. |
+| Coverage | Latest source entry included by a non-empty Observation batch. |
+| Segment check | Observer attempt to group closed historical ranges. |
+| Render depth | Maximum Segment expansion depth from Root. |

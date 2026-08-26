@@ -14,6 +14,12 @@ caller-supplied `Authorization` header as a substitute apiKey. The acceptance ru
 re-introduce a hard `apiKey` requirement — it breaks compaction/consolidation for every OAuth model.
 Tests: `npm test` (vitest); typecheck: `npm run typecheck`.
 
+## Segment Memory V4
+
+`src/memory-tree/store.ts` is the only authority for replay and tree invariants. Persisted V4 events are strict; model proposals alone get best-effort normalization. Compact must queue a fresh forced Observer, then rebuild and render by `memoryDepth`; never compact from stale memory after an Observer failure. V4 intentionally does not read V2/V3 memory.
+
+Prompt regressions are covered by `eval/run-observer-eval.mjs` and `eval/run-memory-tools-eval.mjs`. They use OpenAI Responses API because reasoning effort plus function tools is not supported by the tested Luna model on Chat Completions. Credentials come only from `API_KEY` in the environment.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.
