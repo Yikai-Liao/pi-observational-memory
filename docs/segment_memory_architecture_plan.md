@@ -215,8 +215,9 @@ data: {
   version: 1;
   observations: Observation[];
   coversUpToId?: string;
-  segmentationPerformed: boolean;
+  segmentationOutcome: "not_requested" | "accepted" | "rejected";
   segments: Segment[];
+  segmentWarning?: string;
   rootTldr: string;
 }
 ```
@@ -224,8 +225,9 @@ data: {
 一次模型输出只追加一个不可变 event：
 
 - `observations` 保存本轮从 raw source 提取的新叶子；非空时 `coversUpToId` 沿用现有 Observation coverage 语义；
-- `segmentationPerformed` 区分“本轮 cadence 未到”与“已经检查 Root 但没有创建 Segment”；
-- `segments` 在未执行或没有可封闭区间时可为空，也可以描述一个多层 proposal forest；
+- `segmentationOutcome` 区分未要求 Segment、合法完成（可以没有可封闭区间）和模型生成非法 forest；
+- `segments` 只保存通过验证的 Segment；非法 forest 不进入 ledger；
+- `segmentWarning` 在 rejected 时保存简短拒绝原因，供即时 warning、status 和 prompt/tool 调优；
 - `rootTldr` 每次成功 run 都更新。
 
 同一 event 同时包含新 Observations 和 Segments 时，fold 先把 Observations 追加到 Root，再原子应用 proposal forest，因此 Segment 可以直接包含本轮新生成的 Observation。
@@ -300,9 +302,9 @@ type MemoryTree = {
 每个 Observer event 按固定顺序处理：
 
 1. 使用 first-valid-record-wins 加入新 Observations，并按首次记录顺序追加到 Root；
-2. 若 `segmentationPerformed=true`，验证并应用本轮 proposal forest；
+2. `accepted` 时验证并应用本轮 proposal forest；`rejected` event 不含非法 Segment，只记录 warning；
 3. 更新 Root TLDR snapshot；
-4. 有非空 Observations 且本轮未 Segment 时，Observer batch 计数加一；本轮完成 Segment 时计数归零。
+4. 有非空 Observations 且本轮 `not_requested` 时，Observer batch 计数加一；`accepted` 时归零；`rejected` 时保持 Segment due，下一次 Observer 继续尝试。
 
 #### Proposal forest
 
@@ -418,8 +420,9 @@ Root 最右侧仍在发展的近期 Observations 可以暂时保持平铺；后�
 ### 6.6 失败语义
 
 - 后台 Observer 模型/API 失败：不写 event、不推进 coverage 或 batch 计数，下次正常触发再试。
-- Segment proposal 非法：保留有效 Observations 和 Root TLDR，本轮不改变树结构。
-- Compact 强制 Observer 失败：委托 Pi native compaction，避免未 Observation 化的 source 在自定义 summary 中丢失。
+- Segment proposal 非法：不持久化非法 Segment；保留有效 Observations 和 Root TLDR，写入 rejected outcome，并向用户 warning 具体拒绝原因；保持 Segment due。
+- Compact 中仅 Segment proposal 非法：继续使用有效 Observations 和平铺树渲染，同时 warning；不把它升级为整个 Observer 失败。
+- Compact 强制 Observer 整体失败：委托 Pi native compaction，避免未 Observation 化的 source 在自定义 summary 中丢失。
 - append 前 Session ID 或 active-branch generation 已变化：放弃整个结果，禁止写入错误 branch。
 
 树退化到平铺 Observation 仍然是正确、可用状态。V1 不为 Session 末尾最后一次失败持久化额外重试状态；若 Session 不再继续，少量平铺尾部无关紧要。
@@ -468,7 +471,7 @@ stateDiagram-v2
 Idle → Observer → Idle
 ```
 
-后台 token trigger 与 Compact flush 经过同一个单写入口，不并行运行两个 Observer。Compact 若遇到同 branch 的 in-flight Observer，可以复用其结果；否则强制运行一轮，然后读取最新已提交 ledger。
+后台 token trigger 与 Compact flush 经过同一个串行队列，不并行运行两个 Observer。Compact 若遇到正在运行的后台 Observer，其 forced Observer 请求排在后面；取得单写执行权后重新读取最新 branch、重新 fold，并运行一轮新的 forced Observer。旧 Observer 的结果可以先正常提交，但绝不复用为本次 Compact 的 forced run。
 
 ### 7.3 提交前复验
 
@@ -901,8 +904,9 @@ Inspector 还应沿 Observer event 时间线展示 Root TLDR，让用户看到 S
 | malformed persisted custom entry | 忽略该 entry；记录 diagnostic |
 | sourceEntryId 在 branch 中缺失 | Observation 仍可读；Compact prefix projection 不猜 boundary；source read 标 partial |
 | Compact 时 tree 为空 | 不接管，委托 Pi native compaction |
-| Compact 强制 Observer 失败 | 委托 Pi native compaction，不使用可能遗漏未观察 source 的自定义 summary |
-| Compact 与后台 Observer 相遇 | 经过同一单写入口复用或运行一轮，然后读取已提交 ledger |
+| Compact 强制 Observer 整体失败 | 委托 Pi native compaction，不使用可能遗漏未观察 source 的自定义 summary |
+| Segment forest 非法 | 丢弃非法 Segment，保留有效 Observations/TLDR，warning 并保持 Segment due；Compact 可继续平铺渲染 |
+| Compact 与后台 Observer 相遇 | forced run 串行排队；获得执行权后基于最新 branch 重新运行，不复用旧 run |
 | Session/branch 在模型调用期间切换 | Abort 或 active-branch generation 校验失败，禁止 append |
 | 历史 Session 文件不存在/损坏 | 工具返回明确错误，不回退到名称猜测 |
 | 导出路径写失败 | 工具失败且不报告成功；内存不受影响 |
@@ -953,15 +957,16 @@ Inspector 还应沿 Observer event 时间线展示 Root TLDR，让用户看到 S
 - 第 2 个成功 batch 执行 Segment 并归零；
 - Compact 无视计数强制 Segment，并 flush 未达到 token threshold 的 raw source；
 - 单次可提交嵌套、多层、非平衡 proposal forest；代码自底向上生成 ID 并验证依赖；
-- 无效 Segment forest 不丢弃同轮有效 Observations/TLDR；
-- Compact Observer failure 委托 Pi native compaction。
+- 无效 Segment forest 不丢弃同轮有效 Observations/TLDR，不进入 ledger，并产生用户可见 warning；
+- rejected Segment 不重置 cadence，下一次 Observer 继续尝试；
+- Compact 仅 Segment rejected 时继续平铺渲染；Observer 整体 failure 才委托 Pi native compaction。
 
 ### 15.5 Lifecycle/race tests
 
 - `session_shutdown` abort worker；
 - Session ID 或 active-branch generation 改变后不 append；
 - proposal 返回期间 Root frontier 改变会复验并拒绝；
-- Compact Observer 与后台 Observer 不并行写入；
+- Compact forced Observer 与后台 Observer 串行排队，且 forced run 基于最新 branch 新跑一轮；
 - Root TLDR 写入 Observer event，fold 使用最新有效版本并保留历史；
 - Compact Observer 失败时委托 Pi native compaction；
 - duplicate compact hook 有明确处理；
