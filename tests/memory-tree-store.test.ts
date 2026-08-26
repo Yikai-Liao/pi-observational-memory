@@ -61,6 +61,8 @@ describe("MemoryTreeStore", () => {
 		expect(tree.root).toEqual(updated);
 		expect(tree.observationBatchesSinceSegmentation).toBe(0);
 		expect(() => new MemoryTreeStore().rebuild([{ type: "custom", id: "bad", customType: OM_OBSERVATIONS_RECORDED, data: {} }])).toThrow(MemoryTreeError);
+		expect(() => new MemoryTreeStore().rebuild([{ type: "custom", id: "empty", customType: OM_OBSERVATIONS_RECORDED, data: { version: 1, nodeRecords: [], segmentCheck: "not_requested" } }])).toThrow(MemoryTreeError);
+		expect(() => new MemoryTreeStore().rebuild([source("raw-a"), event("extra", [{ ...a, tokenCount: 10 } as any], "raw-a")])).toThrow(MemoryTreeError);
 	});
 
 	it("rejects DAGs, missing children, cycles, and source-order changes", () => {

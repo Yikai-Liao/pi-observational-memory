@@ -100,23 +100,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isNonEmptySingleLine(value: unknown): value is string {
-	return typeof value === "string" && value.trim().length > 0 && !/[\r\n]/.test(value);
+	return typeof value === "string" && value === value.trim() && value.length > 0 && !/[\r\n]/.test(value);
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+	return Object.keys(value).every((key) => allowed.includes(key));
 }
 
 export function isObservationRecord(value: unknown): value is Observation {
 	if (!isRecord(value)) return false;
-	return OBSERVATION_ID_PATTERN.test(String(value.id ?? ""))
+	return hasOnlyKeys(value, ["id", "content", "sourceEntryIds"])
+		&& OBSERVATION_ID_PATTERN.test(String(value.id ?? ""))
 		&& isNonEmptySingleLine(value.content)
 		&& Array.isArray(value.sourceEntryIds)
 		&& value.sourceEntryIds.length > 0
-		&& value.sourceEntryIds.every(isNonEmptySingleLine);
+		&& value.sourceEntryIds.every(isNonEmptySingleLine)
+		&& new Set(value.sourceEntryIds).size === value.sourceEntryIds.length;
 }
 
 export function isSegmentRecord(value: unknown): value is Segment {
 	if (!isRecord(value)) return false;
-	return SEGMENT_ID_PATTERN.test(String(value.id ?? ""))
+	return hasOnlyKeys(value, ["id", "title", "summary", "childIds"])
+		&& SEGMENT_ID_PATTERN.test(String(value.id ?? ""))
 		&& isNonEmptySingleLine(value.title)
+		&& value.title.length <= 120
 		&& isNonEmptySingleLine(value.summary)
+		&& value.summary.length <= 2000
 		&& Array.isArray(value.childIds)
 		&& value.childIds.length >= 2
 		&& value.childIds.every(isNodeId);
@@ -128,10 +137,12 @@ export function isNodeRecord(value: unknown): value is Node {
 
 export function isObservationsRecordedData(value: unknown): value is ObservationsRecordedEntryData {
 	if (!isRecord(value)) return false;
+	if (!hasOnlyKeys(value, ["version", "nodeRecords", "coversUpToId", "segmentCheck", "warnings"])) return false;
 	if (value.version !== 1 || !Array.isArray(value.nodeRecords) || !value.nodeRecords.every(isNodeRecord)) return false;
 	if (!["not_requested", "complete", "partial"].includes(String(value.segmentCheck))) return false;
 	if (value.coversUpToId !== undefined && !isNonEmptySingleLine(value.coversUpToId)) return false;
 	if (value.warnings !== undefined && (!Array.isArray(value.warnings) || !value.warnings.every(isNonEmptySingleLine))) return false;
 	const hasObservation = value.nodeRecords.some(isObservationRecord);
+	if (!hasObservation && value.segmentCheck === "not_requested") return false;
 	return hasObservation ? isNonEmptySingleLine(value.coversUpToId) : value.coversUpToId === undefined;
 }
