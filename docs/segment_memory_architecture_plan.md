@@ -280,7 +280,7 @@ type SessionIdentity = {
 当前 active branch 上的 entries：
 
 - `om.observations.recorded`
-- 其他 entry 仅用于 source 索引、boundary 解析和 Session 信息
+- 其他 entry 仅用于 source 索引和 Session 信息
 
 ### 5.2 Fold 状态
 
@@ -360,7 +360,8 @@ Segment 是 Observer 的周期性归组能力，不是第二个 Agent 或第二�
 
 每次 Observer 接收：
 
-- 上次 coverage 后的新 raw source chunk；Compact 强制运行时该 chunk 可以为空；
+- 后台 Observer：上次 coverage 后、受 `observerChunkMaxTokens` 限制的新 raw source chunk；
+- Compact-forced Observer：获得串行执行权后读取最新 branch，将全部尚未 Observation 化的相关 raw source 放入本次输入，不使用后台 chunk cap；该集合可以为空；
 - 当前 Root frontier，其中 Observation 提供时间、relevance 和 content，Segment 提供 title、summary、时间范围和 leaf count；
 - 当前成功 Observation batch 计数，以及本轮是否必须执行 Segment。
 
@@ -422,7 +423,8 @@ Root 最右侧仍在发展的近期 Observations 可以暂时保持平铺；后�
 - 后台 Observer 模型/API 失败：不写 event、不推进 coverage 或 batch 计数，下次正常触发再试。
 - Segment proposal 非法：不持久化非法 Segment；保留有效 Observations 和 Root TLDR，写入 rejected outcome，并向用户 warning 具体拒绝原因；保持 Segment due。
 - Compact 中仅 Segment proposal 非法：继续使用有效 Observations 和平铺树渲染，同时 warning；不把它升级为整个 Observer 失败。
-- Compact 强制 Observer 整体失败：委托 Pi native compaction，避免未 Observation 化的 source 在自定义 summary 中丢失。
+- Compact-forced Observer 整体失败：取消本次 Compact 并 warning，不写 event，也不使用旧树或 Pi native compaction 删除尚未 Observation 化的 raw history。
+- Compact-forced Observer 成功、Root TLDR 已更新，但整棵树仍无任何 Observation/Segment：保留 TLDR event，插件不接管本次 Compact，回退 Pi native compaction；空树意味着对话没有值得记录的 Observation，或 Observer 行为异常，极短 TLDR 不足以独自替代完整 compaction summary。
 - append 前 Session ID 或 active-branch generation 已变化：放弃整个结果，禁止写入错误 branch。
 
 树退化到平铺 Observation 仍然是正确、可用状态。V1 不为 Session 末尾最后一次失败持久化额外重试状态；若 Session 不再继续，少量平铺尾部无关紧要。
@@ -525,48 +527,34 @@ function frontier(node, depth, memoryDepth): Node[] {
 - 中近期一级 Segment 会展开；
 - 尚未进入 Segment 的 Root Observations 保持原文。
 
-### 8.2 必须先按 Pi compaction boundary 做前缀投影
+### 8.2 记忆树与 Pi raw tail 相互独立
 
-Compact 不能直接渲染整棵树，否则会把仍在 raw tail 中的近期内容重复写进 summary。
+Compact 始终从 Root 开始，仅按 `memoryDepth` 渲染完整记忆树。Observation 是否进入 summary，只取决于它在树中的位置和深度，不取决于其 source entries 是否仍在 Pi raw tail 中。
 
-以 `preparation.firstKeptEntryId` 为边界，对每个节点分类：
-
-- **before**：所有 descendant Observation 的所有可解析 source entries 都在 boundary 之前；
-- **after**：所有 descendant Observation 的所有可解析 source entries 都从 boundary 开始或位于其后；
-- **mixed**：Segment 同时覆盖 boundary 前后；
-- **unknown**：任一 descendant source 缺失或无法定位。
-
-规则：
-
-1. `before` 节点按正常 `memoryDepth` 规则渲染。
-2. `after` 节点跳过，由 Pi raw tail 保留。
-3. `mixed` Segment 即使已到 cutoff depth 也不能直接用 summary，因为 summary 含 raw tail 信息；必须递归 children，直到得到纯 `before` 子节点。
-4. 跨 boundary 的单个 Observation 整体跳过，让 retained raw source 承担其信息，避免部分事实重复。
-5. `unknown` 节点不进入 compaction summary，并在 status/debug 中报告；不能在证据边界不明时猜测。
-
-这会让极少数跨 boundary 的 Segment 临时比配置深度展开得更细，但它保持了 summary 与 raw tail 的无重叠语义。后续 Compact 边界越过整个 Segment 后，它会恢复正常 cutoff summary。
+`firstKeptEntryId` 只控制 Pi 保留哪些原始 Session entries；它不参与 Segment Tree 的筛选、展开或去重。memory summary 与 raw tail 出现内容重叠是允许的，也不需要 before/after/mixed boundary 分类或 prefix projector。
 
 ### 8.3 Hook 路径
 
 ```mermaid
 flowchart LR
-    A[session_before_compact] --> B[强制运行一次 Observer: flush raw + Segment + TLDR]
-    B --> C{Observer success?}
-    C -- no --> D[return undefined: Pi native compaction]
-    C -- yes --> E[重新 fold 已提交 tree]
-    E --> F[按 firstKeptEntryId 做 prefix projection]
-    F --> G[按 memoryDepth 取 frontier]
-    G --> H[确定性 render memory summary]
+    A[session_before_compact] --> B[forced Observer 进入串行队列]
+    B --> C[读取最新 branch 与全部 pending raw]
+    C --> D[一次调用生成 Observations + Segment + TLDR]
+    D --> E{Observer success?}
+    E -- no --> F[cancel Compact + warning]
+    E -- yes --> G[重新 fold 已提交 tree]
+    G --> H[按 memoryDepth 取 frontier]
     H --> I{frontier empty?}
-    I -- yes --> D
-    I -- no --> J[返回 summary + firstKeptEntryId + details]
+    I -- yes --> J[return undefined: Pi native compaction]
+    I -- no --> K[确定性 render]
+    K --> L[返回 summary + firstKeptEntryId + details]
 ```
 
-Compact 不自动修改 `memoryDepth` 或做 token optimization。强制 Observer 是唯一模型调用：它处理尚未达到 token threshold 的 raw tail、执行 Segment 并更新 Root TLDR。调用失败时委托 Pi native compaction，避免未进入 Observation 的 source 被自定义 summary 遗漏。
+Compact 不自动修改 `memoryDepth` 或做 token optimization。forced Observer 是唯一模型调用：它不使用后台 `observerChunkMaxTokens`，而是在获得串行执行权后一次处理全部 pending raw source、执行 Segment 并更新 Root TLDR。调用失败时取消本次 Compact 并 warning；不回退 Pi native compaction，也不拿旧树继续删除 raw history。
 
 ### 8.4 Summary 格式
 
-Compact memory 仍使用扁平 representation frontier，不显示被展开但未进入 frontier 的中间 Segment。Root TLDR 主要用于跨 Session discovery，不代替下面的 Session 内 memory summary：
+Compact memory 仍使用扁平 representation frontier，不显示被展开但未进入 frontier 的中间 Segment。Root TLDR 只用于跨 Session discovery，不进入下面的 Session 内 memory summary。若整棵树为空，极短 TLDR 不足以替代完整 summary，插件回退 Pi native compaction：
 
 ```md
 These are condensed memories from earlier in this session.
@@ -707,7 +695,7 @@ JSONL 导出采用可分析的扁平记录：
 ```ts
 type Config = {
   observeAfterTokens: number;
-  observerChunkMaxTokens?: number;
+  observerChunkMaxTokens?: number;  // 仅后台 Observer；Compact-forced run 不使用
   segmentEveryObserverRuns: number; // 新增，默认 2；正整数
   compactAfterTokens: number;
   compactAfterTokensMode: "calibrated" | "ratio";
@@ -739,7 +727,7 @@ type Config = {
 
 - 不在 turn lifecycle 中后台运行 Observer；
 - 不主动触发 auto-compact；
-- manual/Pi compaction hook、status、view、memory tools 仍可用；发生 Compact 时仍按统一流程强制运行一次 Observer，失败则委托 Pi native compaction。
+- manual/Pi compaction hook、status、view、memory tools 仍可用；发生 Compact 时仍按统一流程强制运行一次 Observer，失败则取消本次 Compact 并 warning。
 
 ### 10.3 Breaking-change 边界
 
@@ -771,7 +759,6 @@ src/
 ├─ memory-tree/
 │  ├─ types.ts                  # Observation/Segment/events/type guards
 │  ├─ fold.ts                   # 唯一 event reducer + invariants
-│  ├─ project.ts                # Pi boundary prefix projection
 │  ├─ render.ts                 # depth frontier + deterministic summary
 │  ├─ inspect.ts                # ls/read DTO，不含 Pi UI
 │  └─ export.ts                 # JSON/JSONL records
@@ -780,7 +767,7 @@ src/
 ├─ hooks/
 │  ├─ consolidation-trigger.ts  # token cadence → Observer
 │  ├─ compaction-trigger.ts     # 复用
-│  └─ compaction-hook.ts        # prefix projection → frontier → render
+│  └─ compaction-hook.ts        # depth frontier → render
 ├─ tools/
 │  ├─ memory-sessions.ts
 │  ├─ memory-ls.ts
@@ -821,8 +808,7 @@ src/
 | 设计知识 | 唯一所有者 |
 |---|---|
 | Segment 结构合法性、单父、连续 range | `memory-tree/fold.ts` |
-| source boundary 与 mixed Segment 处理 | `memory-tree/project.ts` |
-| depth cutoff | `memory-tree/render.ts` |
+| depth cutoff 与完整树渲染 | `memory-tree/render.ts` |
 | Observation/Segment/TLDR 模型语义 | Observer prompt/agent |
 | Observer batch cadence、branch generation、in-flight | `runtime.ts` + consolidation hook |
 | Session ID 到文件解析 | `sessions/catalog.ts` |
@@ -875,7 +861,6 @@ Unknown source boundaries: 0
 - `tree.rebuilt`
 - `tree.invalid_entry`
 - `render.completed`
-- `render.unknown_boundary`
 
 默认记录 ID、count、token、depth、compression ratio 和错误，不记录完整 conversation/prompt/summary 内容。
 
@@ -902,9 +887,9 @@ Inspector 还应沿 Observer event 时间线展示 Root TLDR，让用户看到 S
 | Segment proposal 非连续/重叠 | 拒绝 proposal；不修改树 |
 | Segment summary 不压缩 | 拒绝 proposal；让 agent 缩短后重试 |
 | malformed persisted custom entry | 忽略该 entry；记录 diagnostic |
-| sourceEntryId 在 branch 中缺失 | Observation 仍可读；Compact prefix projection 不猜 boundary；source read 标 partial |
-| Compact 时 tree 为空 | 不接管，委托 Pi native compaction |
-| Compact 强制 Observer 整体失败 | 委托 Pi native compaction，不使用可能遗漏未观察 source 的自定义 summary |
+| sourceEntryId 在 branch 中缺失 | Observation 仍参与按深度渲染；source read 标 partial |
+| Compact 时整棵树为空 | 保留本轮更新后的 Root TLDR event；插件不接管，回退 Pi native compaction |
+| Compact-forced Observer 整体失败 | 取消本次 Compact 并 warning；不写 event、不回退 native、不删除 raw history |
 | Segment forest 非法 | 丢弃非法 Segment，保留有效 Observations/TLDR，warning 并保持 Segment due；Compact 可继续平铺渲染 |
 | Compact 与后台 Observer 相遇 | forced run 串行排队；获得执行权后基于最新 branch 重新运行，不复用旧 run |
 | Session/branch 在模型调用期间切换 | Abort 或 active-branch generation 校验失败，禁止 append |
@@ -940,14 +925,12 @@ Inspector 还应沿 Observer event 时间线展示 Root TLDR，让用户看到 S
 - 任意有限 depth 的估算 token 不超过 flat baseline；
 - Segment/Observation 行包含可用于工具读取的 ID。
 
-### 15.3 Boundary projection tests
+### 15.3 Depth rendering tests
 
-- 整个 Segment 在 `firstKeptEntryId` 前：可按 depth collapse；
-- 整个 Segment 在后：不进 summary；
-- Segment 跨 boundary：强制展开并只保留纯 before children；
-- 单 Observation source 跨 boundary：整体跳过；
-- source ID 缺失：不猜测并产生 diagnostic；
-- raw tail 与 memory summary 不包含同一完整 Observation。
+- 同一棵树在相同 `memoryDepth` 下始终产生相同 frontier；
+- 改变 `firstKeptEntryId` 不改变 memory frontier；
+- Observation 即使其 source 仍在 raw tail 中，也按树深度正常进入 summary；
+- source ID 缺失不影响深度渲染，source read 单独标 partial。
 
 ### 15.4 Observer/Segment tests
 
@@ -955,11 +938,11 @@ Inspector 还应沿 Observer event 时间线展示 Root TLDR，让用户看到 S
 - 每个成功 run 只写一个 event；
 - 成功非空 batch 计数，empty/failure 不计数；
 - 第 2 个成功 batch 执行 Segment 并归零；
-- Compact 无视计数强制 Segment，并 flush 未达到 token threshold 的 raw source；
+- Compact 无视计数强制 Segment，并在一个不受后台 chunk cap 限制的输入中 flush 全部 pending raw source；
 - 单次可提交嵌套、多层、非平衡 proposal forest；代码自底向上生成 ID 并验证依赖；
 - 无效 Segment forest 不丢弃同轮有效 Observations/TLDR，不进入 ledger，并产生用户可见 warning；
 - rejected Segment 不重置 cadence，下一次 Observer 继续尝试；
-- Compact 仅 Segment rejected 时继续平铺渲染；Observer 整体 failure 才委托 Pi native compaction。
+- Compact 仅 Segment rejected 时继续平铺渲染；Observer 整体 failure 时取消 Compact，不回退 Pi native compaction。
 
 ### 15.5 Lifecycle/race tests
 
@@ -968,7 +951,8 @@ Inspector 还应沿 Observer event 时间线展示 Root TLDR，让用户看到 S
 - proposal 返回期间 Root frontier 改变会复验并拒绝；
 - Compact forced Observer 与后台 Observer 串行排队，且 forced run 基于最新 branch 新跑一轮；
 - Root TLDR 写入 Observer event，fold 使用最新有效版本并保留历史；
-- Compact Observer 失败时委托 Pi native compaction；
+- Compact-forced Observer 失败时取消 Compact、warning，且 raw history 保持不变；
+- forced Observer 成功但整棵树为空时保留 TLDR event，并回退 Pi native compaction；
 - duplicate compact hook 有明确处理；
 - `/tree` 导航后 cache 按新 branch 重建。
 
@@ -999,7 +983,7 @@ npm run typecheck
 V4 首版必须同时满足：
 
 1. 每次 Observer 只发起一个模型请求，同时生成 Observations、Root TLDR 和到期时的 Segment forest。
-2. `segmentEveryObserverRuns` 默认 2；每次 Compact 无视计数强制 Segment，Observer 失败则委托 Pi native compaction。
+2. `segmentEveryObserverRuns` 默认 2；每次 Compact 无视计数、无视后台 chunk cap，强制 Observer 一次处理全部 pending raw 并执行 Segment；失败则取消 Compact。
 3. 默认 `memoryDepth=2`。
 4. 没有正常渲染 token budget/planner。
 5. 每个有效节点最多一个 parent。
@@ -1032,8 +1016,7 @@ V4 首版必须同时满足：
 
 - 增加 Segment types/type guards/builders。
 - 实现 fold reducer、Root range replacement 和 diagnostics。
-- 实现 depth frontier renderer。
-- 实现 `firstKeptEntryId` prefix projection 和 mixed Segment 规则。
+- 实现只由 `memoryDepth` 决定的完整树 frontier renderer。
 - 写 pure unit/golden/property-style invariant tests。
 
 退出条件：给定任意合法/恶意事件序列，fold 不抛错且 invariant 成立；render 不超过 flat baseline。
@@ -1058,15 +1041,15 @@ V4 首版必须同时满足：
 
 任务：
 
-- `compaction-hook` 在渲染前通过单写入口强制运行一次 Observer，flush pending raw source，并无视 cadence 生成 Segment forest 与 Root TLDR。
-- Observer 成功后 fold 统一 event，再执行 prefix projection → depth frontier → deterministic render；失败则委托 Pi native compaction。
+- `compaction-hook` 在渲染前通过串行队列强制运行一次 Observer；该 run 不使用后台 chunk cap，一次 flush 全部 pending raw，并无视 cadence 生成 Segment forest 与 Root TLDR。
+- Observer 成功后 fold 统一 event，再执行 depth frontier → deterministic render；失败则取消 Compact 并 warning。
 - compaction details 只保存 `memoryDepth` 和 rendered frontier。
 - 新增 `memoryDepth` 与 `segmentEveryObserverRuns`（默认 2），移除三个 Reflection/Pool 配置。
 - `/om:status` 显示树深度、frontier 和估算压缩比例。
 - `/om:view` 支持当前 tree 和最近一次 visible frontier。
-- 保持空 tree 委托 Pi native summarizer。
+- forced Observer 成功但整棵树为空时，保留已更新的 Root TLDR event，并像旧版一样回退 Pi native compaction。
 
-退出条件：手动、proactive、Pi overflow compaction 都先强制运行一轮 Observer，再走同一树投影路径；默认 depth 2 行为通过 golden tests；Observer 失败时由 Pi native compaction 保底。
+退出条件：手动、proactive、Pi overflow compaction 都先强制运行一轮不受后台 chunk cap 限制的 Observer，再走同一树投影路径；默认 depth 2 行为通过 golden tests；Observer 失败时取消 Compact，且 raw history 不变。
 
 ### Phase 4：主动读取、跨 Session 与导出
 
@@ -1094,13 +1077,9 @@ V4 首版必须同时满足：
 
 退出条件：代码中只有一个 memory truth 和一个 renderer；文档不再描述已删除的 Reflection/Drop 主流程。
 
-### Phase 6（真实证据触发，不属于首版）：Tail boundary 与 Inspector
+### Phase 6（真实证据触发，不属于首版）：Inspector
 
-只有在 V4 上线数据证明有收益空间时评估：
-
-- 以 Segment/Observation source span 对齐 `firstKeptEntryId`；
-- 对齐前后 raw-tail token、重复率和继续任务质量 A/B；
-- localhost 随机端口火焰图。
+只有在 V4 上线数据证明有收益空间时评估 localhost 随机端口火焰图。
 
 没有测量，不进入实现。
 
@@ -1113,8 +1092,7 @@ V4 首版必须同时满足：
 | Observer 的 Segment 阶段长期不产出，Root 继续平铺 | 平铺仍正确；status 暴露 Root/深度 | 真实 workload 中 depth=2 长期接近 flat baseline |
 | Observer 过度归纳 | 历史区间判据、每 Segment 至少两 child、source 可追溯 | read 经常需要立刻展开且 summary 无法支持继续任务 |
 | Summary 丢失关键细节 | childIds 保留完整 subtree；memory_read 可展开 | 经常出现“必须展开才能避免错误决策” |
-| 跨 boundary Segment 重复 raw tail | mixed Segment 强制递归 | 仍可构造同一 Observation 同时进入 summary/raw 的反例 |
-| Observer model context 不够同时容纳 raw chunk 与 Root frontier | 失败不推进 coverage；Compact 失败委托 Pi native | context failures 可复现且持续发生 |
+| Observer model context 不够同时容纳 raw chunk 与 Root frontier | 失败不推进 coverage；Compact-forced run 失败则取消 Compact、保留 raw history | context failures 可复现且持续发生 |
 | Sub-agent Session 不可见 | 明确要求持久 child + 插件加载 | 目标 Sub-agent package 提供稳定 parent/child metadata contract |
 
 ---
@@ -1130,8 +1108,8 @@ V4 首版必须同时满足：
 6. 代码先生成 Observation IDs，再自底向上生成/验证 Segment IDs，追加一个 om.observations.recorded event；batch count 归零。
 7. TreeStore fold 该 event：先追加新 Observations，再原子应用 forest，Root 因而变浅而旧历史变深。
 8. Pi 触发 Compact，即使 pending raw 尚未达到 observeAfterTokens，也强制运行一次 Observer。
-9. Observer 同一次输出 flush pending raw、执行 Segment 并更新 TLDR；成功后重新 fold，失败则委托 Pi native compaction。
-10. 成功路径按 firstKeptEntryId 和 memoryDepth=2 确定性渲染。
+9. Compact 开始前先运行一次 Observer。它读取上次 Observer 之后新增的全部对话，并在一次模型调用中生成新的 Observations、整理 Segment、更新 Root TLDR。成功后再执行 Compact；调用失败则终止本次 Compact 并显示警告。
+10. 成功路径只按 memoryDepth=2 确定性渲染完整记忆树；firstKeptEntryId 仅交还给 Pi 管理 raw tail。
 11. 跨 Session discovery 读取最新 TLDR，后续 Inspector 可展示历次 Observer event 中的变化。
 12. 需要细节时：
     memory_sessions → memory_ls → memory_read(S_fix) → memory_read(O102, includeSources=true)。
@@ -1142,8 +1120,7 @@ V4 首版必须同时满足：
 
 - **Observer**：一次模型调用完成 Observation 提取、Root TLDR 更新，并按 batch cadence 或 Compact 强制执行 Segment。
 - **TreeStore**：拥有结构合法性、cadence fold 和唯一父关系。
-- **Prefix Projector**：拥有 Compact boundary 正确性。
-- **Depth Renderer**：只决定当前保留几层细节。
+- **Depth Renderer**：只按配置决定当前保留几层细节。
 - **Pi Session**：拥有身份、branch、持久化和 raw-tail 生命周期。
 - **Memory tools**：负责按需展开，不参与记忆生成。
 
