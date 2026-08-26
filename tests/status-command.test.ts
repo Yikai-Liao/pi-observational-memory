@@ -27,6 +27,15 @@ describe("/om:status", () => {
 		expect(output).toContain("Tree validation: valid");
 	});
 
+	it("reports passive mode", async () => {
+		let handler: any;
+		const pi = { registerCommand: (_name: string, command: any) => { handler = command.handler; } } as any;
+		registerStatusCommand(pi, { configLoaded: true, config: { ...DEFAULTS, passive: true }, ensureConfig: vi.fn() } as any);
+		const notify = vi.fn();
+		await handler("", { cwd: "/project", sessionManager: { getBranch: memoryEntries }, ui: { notify } });
+		expect(notify.mock.calls[0][0]).toContain("Passive: background Observer and auto-compaction disabled");
+	});
+
 	it("reports malformed V4 memory without rendering it", async () => {
 		let handler: any;
 		const pi = { registerCommand: (_name: string, command: any) => { handler = command.handler; } } as any;

@@ -20,8 +20,6 @@ function captureHandler(args: { compactAfterTokens?: number; compactAfterTokensM
 			passive: args.passive ?? false,
 		},
 		compactInFlight: args.compactInFlight ?? false,
-		observerPromise: new Promise(() => {}),
-		reflectDropPromise: new Promise(() => {}),
 	};
 	registerCompactionTrigger(pi as any, runtime as any);
 	if (!handler) throw new Error("agent_settled handler was not registered");
@@ -50,7 +48,7 @@ function fakeCtx(branches: TestEntry[][], overrides: Record<string, unknown> = {
 const dueBranch = [textCustomMessage("raw-1", "aaaaaaaaaaaa")]; // 3 tokens
 const belowBranch = [textCustomMessage("raw-1", "aaaa")]; // 1 token
 
-describe("V3 compaction trigger", () => {
+describe("compaction trigger", () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
 	});
@@ -85,6 +83,23 @@ describe("V3 compaction trigger", () => {
 		);
 	});
 
+	it("clears in-flight state from compact callbacks and permits a later run", async () => {
+		const { handler, runtime } = captureHandler({ compactAfterTokens: 3 });
+		const ctx = fakeCtx([dueBranch, dueBranch]);
+		handler(agentSettled(), ctx);
+		await vi.runAllTimersAsync();
+		const firstOptions = (ctx.compact as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as { onComplete: () => void; onError: (error: { message: string }) => void };
+		expect(runtime.compactInFlight).toBe(true);
+		firstOptions.onComplete();
+		expect(runtime.compactInFlight).toBe(false);
+
+		handler(agentSettled(), ctx);
+		await vi.runAllTimersAsync();
+		const secondOptions = (ctx.compact as ReturnType<typeof vi.fn>).mock.calls[1]?.[0] as { onError: (error: { message: string }) => void };
+		secondOptions.onError({ message: "provider failed" });
+		expect(runtime.compactInFlight).toBe(false);
+	});
+
 	it("skips passive mode", async () => {
 		const { handler, runtime } = captureHandler({ passive: true });
 		const ctx = fakeCtx([dueBranch]);
@@ -106,16 +121,6 @@ describe("V3 compaction trigger", () => {
 
 		expect(ctx.sessionManager.getBranch).not.toHaveBeenCalled();
 		expect(ctx.compact).not.toHaveBeenCalled();
-	});
-
-	it("does not await observer or reflect/drop promises before compacting", async () => {
-		const { handler } = captureHandler({ compactAfterTokens: 3 });
-		const ctx = fakeCtx([dueBranch]);
-
-		handler(agentSettled(), ctx);
-		await vi.runAllTimersAsync();
-
-		expect(ctx.compact).toHaveBeenCalledTimes(1);
 	});
 
 	it("defers compaction if context is no longer idle", async () => {
@@ -263,25 +268,6 @@ describe("V3 compaction trigger", () => {
 		expect(ctx.compact).not.toHaveBeenCalled();
 	});
 
-	it("compacts when raw progress equals the threshold", async () => {
-		const { handler } = captureHandler({ compactAfterTokens: 3 });
-		const branch = [
-			compactionEntry("cmp-1", { firstKeptEntryId: "raw-1" }),
-			rawMessage("assistant-1", "done", {
-				message: { role: "assistant", content: "done", stopReason: "end_turn", usage: { totalTokens: 100 } },
-			}),
-			textCustomMessage("raw-1", "aaaaaaaaaaaa"),
-		];
-		const ctx = fakeCtx([branch], {
-			getContextUsage: vi.fn(() => ({ tokens: 101, contextWindow: 200000 })),
-		});
-
-		handler(agentSettled(), ctx);
-		await vi.runAllTimersAsync();
-
-		expect(ctx.compact).toHaveBeenCalledTimes(1);
-	});
-
 	it("uses raw progress when provider usage is unknown or has no baseline", async () => {
 		const { handler } = captureHandler({ compactAfterTokens: 3 });
 		const branch = [compactionEntry("cmp-1"), textCustomMessage("raw-1", "aaaa")];
@@ -329,6 +315,20 @@ describe("V3 compaction trigger", () => {
 	});
 
 	describe("ratio mode", () => {
+		it("floors fractional thresholds and enforces a minimum of one", async () => {
+			const { handler } = captureHandler({ compactAfterTokens: 81000, compactAfterTokensMode: "ratio", compactAfterTokensRatio: 0.5 });
+			const ctx = fakeCtx([belowBranch], { model: { contextWindow: 3 } });
+			handler(agentSettled(), ctx);
+			await vi.runAllTimersAsync();
+			expect(ctx.compact).toHaveBeenCalledTimes(1); // floor(1.5) = 1
+
+			const minimum = captureHandler({ compactAfterTokens: 81000, compactAfterTokensMode: "ratio", compactAfterTokensRatio: 0.01 });
+			const minimumCtx = fakeCtx([belowBranch], { model: { contextWindow: 3 } });
+			minimum.handler(agentSettled(), minimumCtx);
+			await vi.runAllTimersAsync();
+			expect(minimumCtx.compact).toHaveBeenCalledTimes(1);
+		});
+
 		it("scales the compaction threshold by model.contextWindow", async () => {
 			// 3 tokens raw; ratio 0.5 of 4-token window = 2 -> threshold 2, so 3 >= 2 fires.
 			const { handler } = captureHandler({

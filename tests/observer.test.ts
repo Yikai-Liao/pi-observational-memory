@@ -61,9 +61,30 @@ describe("runObserver", () => {
 		await expect(runObserver({ ...args, agentLoop: duplicate })).rejects.toThrow(/more than once/);
 	});
 
-	it("surfaces terminal stream errors", async () => {
-		const loop = fakeAgentLoop(() => {}, [{ message: { role: "assistant", stopReason: "error", errorMessage: "prompt too long" } }]);
-		await expect(runObserver({ ...args, agentLoop: loop })).rejects.toBeInstanceOf(ObserverStreamError);
+	it.each(["error", "aborted"])("surfaces terminal %s streams even after submission", async (stopReason) => {
+		const loop = ((_prompts: any[], context: any) => ({
+			async *[Symbol.asyncIterator]() {
+				await context.tools[0].execute("tool", { tree: null });
+				yield { message: { role: "assistant", stopReason, errorMessage: "stream stopped" } };
+			},
+			result: async () => ({}),
+		})) as any;
+		const promise = runObserver({ ...args, agentLoop: loop });
+		await expect(promise).rejects.toBeInstanceOf(ObserverStreamError);
+		await expect(promise).rejects.toMatchObject({ stopReason });
+	});
+
+	it("sends current tree, source, segmentation state, and batch count to the model", async () => {
+		let prompt = "";
+		const loop = fakeAgentLoop(async (prompts, context) => {
+			prompt = prompts[0].content[0].text;
+			await context.tools[0].execute("tool", { tree: null });
+		});
+		await runObserver({ ...args, segmentRequired: true, successfulBatches: 3, agentLoop: loop });
+		expect(prompt).toContain("SEGMENT REQUIRED: yes");
+		expect(prompt).toContain("Successful Observation batches since last completed segmentation: 3");
+		expect(prompt).toContain("CURRENT TREE:\n(no Root yet)");
+		expect(prompt).toContain(args.chunk);
 	});
 
 	it("forwards configured thinking without inventing a default", async () => {

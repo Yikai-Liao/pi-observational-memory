@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderMemoryTree } from "../src/memory-tree/render.js";
+import { renderMemoryTree, maxTreeDepth } from "../src/memory-tree/render.js";
 import type { MemoryTree, Observation, Segment } from "../src/memory-tree/types.js";
 
 const a: Observation = { id: "aaaaaaaaaaaa", content: "Investigated the release workflow and located the faulty routing behavior.", sourceEntryIds: ["raw-a"] };
@@ -35,6 +35,23 @@ describe("renderMemoryTree", () => {
 		expect(one.details.renderedNodeIds).toEqual([root.id, c.id, child.id]);
 		expect(one.markdown).toContain(child.summary);
 		expect(one.markdown).not.toContain(a.id);
+	});
+
+	it("reports token cost, maximum depth, and rejects invalid depths", () => {
+		const rendered = renderMemoryTree(tree, 2);
+		expect(rendered.estimatedTokens).toBe(Math.ceil(rendered.markdown.length / 4));
+		expect(maxTreeDepth(tree)).toBe(2);
+		expect(() => renderMemoryTree(tree, -1)).toThrow(/memoryDepth/);
+		expect(() => renderMemoryTree(tree, 1.5)).toThrow(/memoryDepth/);
+	});
+
+	it("keeps the compaction Markdown structure and section boundaries", () => {
+		const markdown = renderMemoryTree(tree, 2).markdown;
+		expect(markdown).toMatch(/^These are your past working memories, organized as a Segment Tree\./);
+		expect(markdown).toContain("\n\n# [s_111111111111] Release and architecture\n\n");
+		expect(markdown.indexOf("1. [cccccccccccc]")).toBeLessThan(markdown.indexOf("## [s_222222222222]"));
+		expect(markdown).toContain("\n\n1. [aaaaaaaaaaaa]");
+		expect(markdown).toContain("\n2. [bbbbbbbbbbbb]");
 	});
 
 	it("renders a single Observation root consistently at every depth", () => {

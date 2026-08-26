@@ -25,6 +25,20 @@ describe("/om:view", () => {
 		expect(copy.mock.calls[1][0]).toContain("aaaaaaaaaaaa");
 	});
 
+	it("defaults to visible depth and reports clipboard failures", async () => {
+		let handler: any;
+		const pi = { registerCommand: (_name: string, command: any) => { handler = command.handler; } } as any;
+		registerViewCommand(pi, { configLoaded: true, config: { ...DEFAULTS, memoryDepth: 0 }, ensureConfig: vi.fn() } as any, {
+			copyToClipboard: vi.fn(async () => { throw new Error("clipboard unavailable"); }),
+		});
+		const notify = vi.fn();
+		await handler("", { cwd: "/project", sessionManager: { getBranch: entries }, ui: { notify } });
+		const output = notify.mock.calls[0][0];
+		expect(output).toContain("# [s_111111111111] Issue repair");
+		expect(output).not.toContain("aaaaaaaaaaaa");
+		expect(output).toContain("Warning: failed to copy /om:view output to clipboard.");
+	});
+
 	it("rejects unsupported modes", async () => {
 		let handler: any;
 		const pi = { registerCommand: (_name: string, command: any) => { handler = command.handler; } } as any;

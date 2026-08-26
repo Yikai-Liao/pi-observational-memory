@@ -73,6 +73,7 @@ function validate(test, response) {
 		if (observation.id !== undefined) failures.push(`new Observation illegally carries id ${observation.id}`);
 		if (/\r|\n/.test(observation.content ?? "")) failures.push("Observation content contains a newline");
 		if (!Array.isArray(observation.sourceEntryIds) || observation.sourceEntryIds.length === 0) failures.push("Observation lacks sourceEntryIds");
+		else if (new Set(observation.sourceEntryIds).size !== observation.sourceEntryIds.length) failures.push("Observation contains duplicate sourceEntryIds");
 	}
 	const duplicateRefs = refs.filter((id, index) => refs.indexOf(id) !== index);
 	if (duplicateRefs.length) failures.push(`duplicate refs: ${[...new Set(duplicateRefs)].join(", ")}`);
@@ -87,6 +88,7 @@ function validate(test, response) {
 	for (const id of test.expect.forbidRefIds ?? []) if (refs.includes(id)) failures.push(`forbidden hidden-descendant ref ${id}`);
 	const text = observations.map((node) => node.content).join(" ");
 	for (const term of test.expect.contentTerms ?? []) if (!text.toLowerCase().includes(term.toLowerCase())) failures.push(`Observation content missing ${term}`);
+	for (const pattern of test.expect.forbiddenContentPatterns ?? []) if (new RegExp(pattern, "i").test(text)) failures.push(`Observation content matches forbidden polarity ${pattern}`);
 	const nested = segments.filter(({ depth }) => depth > 0);
 	if (test.expect.nestedSegment === true && nested.length === 0) failures.push("expected a nested Segment");
 	if (test.expect.nestedSegment === false && nested.length > 0) failures.push("unexpected nested Segment");

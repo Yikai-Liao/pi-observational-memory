@@ -51,6 +51,28 @@ describe("Segment Memory compaction hook", () => {
 		expect(result.compaction.details).toMatchObject({ type: "om.segment-tree.rendered", memoryDepth: 1 });
 	});
 
+	it("cancels when the persisted tree is malformed after Observer succeeds", async () => {
+		const malformed: Entry = { type: "custom", id: "bad-memory", customType: OM_OBSERVATIONS_RECORDED, data: {} };
+		const state = setup([malformed]);
+		runObserverOnce.mockResolvedValue({ appended: false, warnings: [] });
+		await expect(state.hook(state.event, state.ctx)).resolves.toEqual({ cancel: true });
+		expect(state.notify).toHaveBeenCalledWith(expect.stringContaining("memory tree is invalid"), "warning");
+		expect(state.runtime.compactHookInFlight).toBe(false);
+	});
+
+	it("rejects a genuinely overlapping second compaction hook", async () => {
+		const state = setup(validEntries());
+		let release!: () => void;
+		const gate = new Promise<{ appended: boolean; warnings: string[] }>((resolve) => { release = () => resolve({ appended: false, warnings: [] }); });
+		runObserverOnce.mockReturnValueOnce(gate);
+		const first = state.hook(state.event, state.ctx);
+		await vi.waitFor(() => expect(state.runtime.compactHookInFlight).toBe(true));
+		await expect(state.hook(state.event, state.ctx)).resolves.toEqual({ cancel: true });
+		release();
+		await expect(first).resolves.toMatchObject({ compaction: expect.anything() });
+		expect(state.runtime.compactHookInFlight).toBe(false);
+	});
+
 	it("delegates native compaction when forced Observer succeeds without memory", async () => {
 		const state = setup([]);
 		runObserverOnce.mockResolvedValue({ appended: false, warnings: [] });

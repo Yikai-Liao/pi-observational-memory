@@ -13,7 +13,16 @@
     "successfulBatches": 0,
     "tree": { "observations": [], "segments": [] },
     "source": "[Source entry id: src-1]\n[User]: Our production database is PostgreSQL 16; do not describe it as MySQL.\n\n[Source entry id: src-2]\n[User]: Which database do we use?",
-    "expect": { "topTypes": ["observation", "segment"], "sourceIdsInclude": ["src-1"], "contentTerms": ["PostgreSQL 16", "MySQL"] }
+    "expect": {
+      "topTypes": ["observation", "segment"],
+      "sourceIdsInclude": ["src-1"],
+      "contentTerms": ["PostgreSQL 16", "MySQL"],
+      "forbiddenContentPatterns": [
+        "\\b(?:production\\s+)?database\\s+(?:is|uses)\\s+MySQL\\b",
+        "\\buses?\\s+MySQL\\s+(?:instead of|rather than)\\s+PostgreSQL(?:\\s+16)?\\b",
+        "\\bMySQL\\s+(?:instead of|rather than|not)\\s+PostgreSQL"
+      ]
+    }
   },
   {
     "name": "multiple-first-batch-observations-create-root-segment",

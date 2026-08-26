@@ -161,6 +161,16 @@ describe("Runtime V4 behavior", () => {
 		expect(runtime.sessionAbort.signal.aborted).toBe(false);
 	});
 
+	it("continues queued Observer work after a rejection", async () => {
+		const runtime = new Runtime();
+		const first = runtime.enqueueObserver(async () => { throw new Error("first failed"); });
+		const order: string[] = [];
+		const second = runtime.enqueueObserver(async () => { order.push("second"); });
+		await expect(first).rejects.toThrow("first failed");
+		await expect(second).resolves.toBeUndefined();
+		expect(order).toEqual(["second"]);
+	});
+
 	it("keeps compaction flags independent", () => {
 		const runtime = new Runtime();
 		runtime.compactInFlight = true;

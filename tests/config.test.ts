@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -21,6 +21,36 @@ describe("V4 config", () => {
 		expect(config.memoryDepth).toBe(0);
 		expect(config.segmentEveryObserverRuns).toBe(3);
 		expect(config).not.toHaveProperty("reflectAfterTokens");
+	});
+
+	it("merges global settings before project settings", () => {
+		const globalDir = "/tmp/no-global-settings";
+		mkdirSync(globalDir, { recursive: true });
+		writeFileSync(join(globalDir, "settings.json"), JSON.stringify({ "observational-memory": { observeAfterTokens: 11, segmentEveryObserverRuns: 4 } }));
+		try {
+			const project = mkdtempSync(join(tmpdir(), "om-config-"));
+			mkdirSync(join(project, ".pi"));
+			writeFileSync(join(project, ".pi", "settings.json"), JSON.stringify({ "observational-memory": { observeAfterTokens: 13, memoryDepth: 0 } }));
+			const config = loadConfig(project, {});
+			expect(config.observeAfterTokens).toBe(13);
+			expect(config.segmentEveryObserverRuns).toBe(4);
+			expect(config.memoryDepth).toBe(0);
+		} finally {
+			rmSync(join(globalDir, "settings.json"), { force: true });
+		}
+	});
+
+	it("ignores invalid numeric settings at the config boundary", () => {
+		const project = mkdtempSync(join(tmpdir(), "om-config-"));
+		mkdirSync(join(project, ".pi"));
+		writeFileSync(join(project, ".pi", "settings.json"), JSON.stringify({ "observational-memory": {
+			observeAfterTokens: "10", segmentEveryObserverRuns: 0, compactAfterTokens: -1, memoryDepth: -1,
+		} }));
+		const config = loadConfig(project, {});
+		expect(config.observeAfterTokens).toBe(DEFAULTS.observeAfterTokens);
+		expect(config.segmentEveryObserverRuns).toBe(DEFAULTS.segmentEveryObserverRuns);
+		expect(config.compactAfterTokens).toBe(DEFAULTS.compactAfterTokens);
+		expect(config.memoryDepth).toBe(DEFAULTS.memoryDepth);
 	});
 
 	it("keeps passive env parsing", () => {
