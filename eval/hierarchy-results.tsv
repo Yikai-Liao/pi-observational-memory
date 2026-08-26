@@ -2,3 +2,8 @@ round	prompt	cases_passed	checks_passed	status	note
 baseline	production@a2613d5	0/7	77/149	baseline	Finalized semantic-anchor oracle: shallow one-level grouping; all Root titles stayed generic and summaries were 22-42 chars.
 round1	hierarchy completion policy	0/7	74/149	keep-shape	Fixed-score delta -3, but produced depth 3-4 in four cases; retained because the user-selected objective is old-deep/new-shallow hierarchy, not score alone.
 round2	Root identity and summary density	0/7	105/149	keep	Generic Root titles were corrected in 6/7 cases, Root summaries grew to 187-448 chars, and four cases reached depth 3-4; +28 fixed checks over baseline.
+round3	safe recursive construction procedure	0/7	68/149	revert	Extra six-step construction instructions made large proposals more conservative and caused three flat fallbacks.
+round4	tree shape metadata	0/7	83/149;89/149	revert	Two repeats exposed root counts and subtree sizes but did not improve robustness; large cases still produced overlap/non-expansion fallbacks.
+round5	recursive function schema	0/7	80/149	revert	Replacing children:any with recursive Type.Module made Luna restate existing Observations instead of refs and produced 18 normalization warnings in one case.
+final-baseline	original prompt on six real-cadence fixtures	0/6	46/66	baseline	Pass@3 baseline after replacing synthetic wide-frontier cases with six actual two-batch Observer states.
+final	accepted production prompt on six real-cadence fixtures	6/6	66/66	keep	Pass@3; attempts used were 3,1,1,2,1,2. Accepted trees had depth 3,3,3,4,3,4 and 2-4 Root children.

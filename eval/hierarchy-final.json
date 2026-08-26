@@ -1,0 +1,114 @@
+{
+  "model": "gpt-5.6-luna-2",
+  "reasoning": "medium",
+  "attempts": 3,
+  "prompt": "production",
+  "casesPassed": 6,
+  "casesTotal": 6,
+  "checksPassed": 66,
+  "checksTotal": 66,
+  "results": [
+    {
+      "name": "swarm-call-04-architecture-and-operations",
+      "passed": true,
+      "checksPassed": 11,
+      "checksTotal": 11,
+      "failures": [],
+      "warnings": [],
+      "metrics": {
+        "observations": 27,
+        "segments": 8,
+        "depth": 3,
+        "rootChildren": 3,
+        "rootTitle": "SwarmForge architecture, workflows, and operations",
+        "rootSummaryChars": 320
+      },
+      "attemptsUsed": 3
+    },
+    {
+      "name": "swarm-call-12-pi-decision-and-dashboard-blockers",
+      "passed": true,
+      "checksPassed": 11,
+      "checksTotal": 11,
+      "failures": [],
+      "warnings": [],
+      "metrics": {
+        "observations": 60,
+        "segments": 6,
+        "depth": 3,
+        "rootChildren": 3,
+        "rootTitle": "SwarmForge architecture, Pi integration, and Dashboard operations",
+        "rootSummaryChars": 394
+      },
+      "attemptsUsed": 1
+    },
+    {
+      "name": "orchestra-call-06-diagnosis-and-first-fix",
+      "passed": true,
+      "checksPassed": 11,
+      "checksTotal": 11,
+      "failures": [],
+      "warnings": [],
+      "metrics": {
+        "observations": 23,
+        "segments": 5,
+        "depth": 3,
+        "rootChildren": 2,
+        "rootTitle": "Release workflow routing and publish fixes",
+        "rootSummaryChars": 255
+      },
+      "attemptsUsed": 1
+    },
+    {
+      "name": "orchestra-call-16-frontend-and-backend-chapters",
+      "passed": true,
+      "checksPassed": 11,
+      "checksTotal": 11,
+      "failures": [],
+      "warnings": [],
+      "metrics": {
+        "observations": 75,
+        "segments": 13,
+        "depth": 4,
+        "rootChildren": 2,
+        "rootTitle": "Frontend and backend release routing",
+        "rootSummaryChars": 275
+      },
+      "attemptsUsed": 2
+    },
+    {
+      "name": "memory-call-12-validation-and-publication",
+      "passed": true,
+      "checksPassed": 11,
+      "checksTotal": 11,
+      "failures": [],
+      "warnings": [],
+      "metrics": {
+        "observations": 42,
+        "segments": 9,
+        "depth": 3,
+        "rootChildren": 4,
+        "rootTitle": "V4 Segment Memory implementation, validation, and release",
+        "rootSummaryChars": 408
+      },
+      "attemptsUsed": 1
+    },
+    {
+      "name": "memory-call-32-test-contract-expansion",
+      "passed": true,
+      "checksPassed": 11,
+      "checksTotal": 11,
+      "failures": [],
+      "warnings": [],
+      "metrics": {
+        "observations": 118,
+        "segments": 15,
+        "depth": 4,
+        "rootChildren": 4,
+        "rootTitle": "Segment Memory V4 implementation, hardening, and test assurance",
+        "rootSummaryChars": 279
+      },
+      "attemptsUsed": 2
+    }
+  ]
+}

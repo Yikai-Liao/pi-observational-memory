@@ -48,6 +48,9 @@ describe("runObserver", () => {
 		expect(systemPrompt).toContain("sourceEntryIds");
 		expect(systemPrompt).toContain("at least two direct children");
 		expect(systemPrompt).toContain("same id");
+		expect(systemPrompt).toContain("Root identity and summary density");
+		expect(systemPrompt).toContain("Hierarchy completion objective");
+		expect(systemPrompt).toContain("Multi-level grouping example");
 		expect(systemPrompt).not.toContain("relevance");
 		expect(systemPrompt).not.toContain("dropper");
 	});

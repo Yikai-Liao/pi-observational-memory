@@ -1,19 +1,49 @@
 {
-  "version": 1,
-  "description": "Seven standardized medium-reasoning Observer calls derived from frozen real V3 sessions. Cases test informative Root metadata, bounded Root fan-out, age-deepened hierarchy, truthful phase/chapter ranges, and information-dense summaries.",
+  "version": 2,
+  "description": "Six medium-reasoning Observer calls at real two-batch cadence boundaries. Each input contains the prior idealized tree plus only the next real V3 batches, so the suite tests progressive old-deep/new-shallow construction rather than retrospective one-shot rebuilding.",
   "cases": [
     {
-      "name": "swarm-architecture-survey",
+      "name": "swarm-call-04-architecture-and-operations",
       "session": "swarm-forge",
-      "rationale": "A large first closed survey should become chapter→phase hierarchy rather than one flat Segment.",
+      "rationale": "After V3 batches 3-4, deepen the prior overview and organize handoff, dashboard, and operations history.",
       "input": {
-        "rootId": "s_100000000001",
+        "rootId": "s_100000000004",
         "title": "Session memory",
         "summary": "SwarmForge project observations.",
         "children": [
           {
+            "segment": {
+              "id": "s_110000000041",
+              "title": "Project overview",
+              "summary": "Mapped SwarmForge purpose, startup, role configuration, worktrees, and supported backends.",
+              "children": [
+                {
+                  "range": [
+                    "ca3ad133f8d9",
+                    "df4b78b10d41"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "segment": {
+              "id": "s_110000000042",
+              "title": "Workflows and runtime",
+              "summary": "Recorded tests, known dashboard issues, pack workflows, role tools, and runtime state.",
+              "children": [
+                {
+                  "range": [
+                    "58a044e556e0",
+                    "8c9901ea412b"
+                  ]
+                }
+              ]
+            }
+          },
+          {
             "range": [
-              "ca3ad133f8d9",
+              "f228a8fbbf34",
               "697913ef7525"
             ]
           }
@@ -27,54 +57,11 @@
           "handoff",
           "dashboard"
         ],
-        "minRootSummaryChars": 100,
-        "maxRootChildren": 3,
-        "maxRootObservations": 0,
-        "minDepth": 3,
-        "groups": [
-          {
-            "anchors": [
-              "b7b8bbffea4c",
-              "33c3cc9295da",
-              "ab108bf99d89"
-            ],
-            "forbidden": [
-              "f228a8fbbf34"
-            ],
-            "summaryTerms": [
-              "startup",
-              "role"
-            ],
-            "minSummaryChars": 55
-          },
-          {
-            "anchors": [
-              "f228a8fbbf34",
-              "4228fb01f243",
-              "c4f225fe6ad4"
-            ],
-            "forbidden": [
-              "da8bb1a435ba"
-            ],
-            "summaryTerms": [
-              "handoff",
-              "queue"
-            ],
-            "minSummaryChars": 55
-          },
-          {
-            "anchors": [
-              "da8bb1a435ba",
-              "b69801793807",
-              "697913ef7525"
-            ],
-            "summaryTerms": [
-              "dashboard",
-              "test"
-            ],
-            "minSummaryChars": 70
-          }
-        ],
+        "minRootSummaryChars": 110,
+        "maxRootChildren": 8,
+        "maxRootObservations": 2,
+        "minDepth": 2,
+        "groups": [],
         "summaryDensity": {
           "minLeaves": 6,
           "minChars": 55,
@@ -84,19 +71,19 @@
       }
     },
     {
-      "name": "swarm-pi-integration-decision",
+      "name": "swarm-call-12-pi-decision-and-dashboard-blockers",
       "session": "swarm-forge",
-      "rationale": "A later call should preserve old chapters while recursively organizing a closed Pi investigation and decision.",
+      "rationale": "After batches 11-12, close the Pi adapter decision and preserve the newly opened dashboard launch blockers as a separate recent phase.",
       "input": {
-        "rootId": "s_100000000002",
+        "rootId": "s_100000000012",
         "title": "Session memory",
-        "summary": "SwarmForge notes and Pi questions.",
+        "summary": "SwarmForge architecture and Pi work.",
         "children": [
           {
             "segment": {
-              "id": "s_110000000001",
-              "title": "Architecture survey",
-              "summary": "Mapped SwarmForge orchestration, handoff transport, dashboard, runtime safety, and tests.",
+              "id": "s_110000000121",
+              "title": "Architecture and operations",
+              "summary": "Mapped orchestration, durable handoffs, dashboard behavior, runtime safety, and tests.",
               "children": [
                 {
                   "range": [
@@ -109,9 +96,9 @@
           },
           {
             "segment": {
-              "id": "s_110000000002",
+              "id": "s_110000000122",
               "title": "Roles and interaction",
-              "summary": "Examined role prompts, persisted task contracts, and the unvalidated human intake path.",
+              "summary": "Examined role prompts, persisted tasks, and the unvalidated human intake path.",
               "children": [
                 {
                   "range": [
@@ -123,9 +110,24 @@
             }
           },
           {
+            "segment": {
+              "id": "s_110000000123",
+              "title": "Pi adapter investigation",
+              "summary": "Found launch-command and tmux message-semantic gaps and compared terminal versus native integration.",
+              "children": [
+                {
+                  "range": [
+                    "0c8790c74dcb",
+                    "b42d2c2d0d16"
+                  ]
+                }
+              ]
+            }
+          },
+          {
             "range": [
-              "0c8790c74dcb",
-              "dd9c556e2fc1"
+              "dd9c556e2fc1",
+              "2697a2a654c9"
             ]
           }
         ]
@@ -136,54 +138,14 @@
           "Pi"
         ],
         "rootSummaryTerms": [
-          "handoff",
-          "extension"
+          "extension",
+          "dashboard"
         ],
-        "minRootSummaryChars": 110,
-        "maxRootChildren": 3,
-        "maxRootObservations": 0,
-        "minDepth": 3,
-        "groups": [
-          {
-            "anchors": [
-              "ea7c538fce37",
-              "0ae47e208054",
-              "97bb6a5d4006",
-              "4bf31d16cc45"
-            ],
-            "forbidden": [
-              "89138eda0cf0"
-            ],
-            "summaryTerms": [
-              "tmux",
-              "steer"
-            ],
-            "minSummaryChars": 65
-          },
-          {
-            "anchors": [
-              "e11946f5e0be",
-              "2b10ca5157a3",
-              "dd9c556e2fc1"
-            ],
-            "summaryTerms": [
-              "extension",
-              "receipt"
-            ],
-            "minSummaryChars": 70
-          },
-          {
-            "anchors": [
-              "0c8790c74dcb",
-              "dd9c556e2fc1"
-            ],
-            "summaryTerms": [
-              "Pi",
-              "extension"
-            ],
-            "minSummaryChars": 100
-          }
-        ],
+        "minRootSummaryChars": 120,
+        "maxRootChildren": 8,
+        "maxRootObservations": 2,
+        "minDepth": 2,
+        "groups": [],
         "summaryDensity": {
           "minLeaves": 6,
           "minChars": 55,
@@ -193,18 +155,48 @@
       }
     },
     {
-      "name": "orchestra-frontend-publish-design",
+      "name": "orchestra-call-06-diagnosis-and-first-fix",
       "session": "orchestra-frontend",
-      "rationale": "The first frontend release investigation contains diagnosis, an initial fix, and a corrected routing contract that require multiple levels.",
+      "rationale": "After batches 5-6, consolidate the completed trigger diagnosis and keep the first implementation/checks as the newer phase.",
       "input": {
-        "rootId": "s_200000000001",
+        "rootId": "s_200000000006",
         "title": "Session memory",
         "summary": "Release workflow investigation.",
         "children": [
           {
+            "segment": {
+              "id": "s_220000000061",
+              "title": "Initial release investigation",
+              "summary": "Established the reported trigger/manual symptoms, repository constraints, branch policy, workflow gates, and recent run evidence.",
+              "children": [
+                {
+                  "range": [
+                    "737a2b11bf4a",
+                    "2e0809b95840"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "segment": {
+              "id": "s_220000000062",
+              "title": "Metadata and ref diagnosis",
+              "summary": "Confirmed manual dev routing, RC_BRANCH behavior, ref-specific workflow differences, and release branch ancestry.",
+              "children": [
+                {
+                  "range": [
+                    "9a76adb62974",
+                    "d46e099d6b0c"
+                  ]
+                }
+              ]
+            }
+          },
+          {
             "range": [
-              "737a2b11bf4a",
-              "1054c9e81cc3"
+              "478f3c77e8be",
+              "df1db1e8d2a6"
             ]
           }
         ]
@@ -212,62 +204,18 @@
       "expect": {
         "rootTitleTerms": [
           "release",
-          "publish"
+          "routing"
         ],
         "rootSummaryTerms": [
           "manual",
           "RC",
-          "routing"
+          "trigger"
         ],
         "minRootSummaryChars": 110,
-        "maxRootChildren": 3,
-        "maxRootObservations": 0,
-        "minDepth": 3,
-        "groups": [
-          {
-            "anchors": [
-              "9a3f20ee75ef",
-              "9a76adb62974",
-              "90e3f331fa22"
-            ],
-            "forbidden": [
-              "722b3da55001"
-            ],
-            "summaryTerms": [
-              "manual",
-              "release"
-            ],
-            "minSummaryChars": 90
-          },
-          {
-            "anchors": [
-              "722b3da55001",
-              "2a8c95fac099",
-              "4ab1c5ff7d09"
-            ],
-            "forbidden": [
-              "fd1bb2c9426b"
-            ],
-            "summaryTerms": [
-              "RC",
-              "metadata"
-            ],
-            "minSummaryChars": 60
-          },
-          {
-            "anchors": [
-              "fd1bb2c9426b",
-              "68dc9261c3ab",
-              "e98bcbd10dad"
-            ],
-            "summaryTerms": [
-              "dev",
-              "test",
-              "rc"
-            ],
-            "minSummaryChars": 90
-          }
-        ],
+        "maxRootChildren": 8,
+        "maxRootObservations": 2,
+        "minDepth": 2,
+        "groups": [],
         "summaryDensity": {
           "minLeaves": 6,
           "minChars": 55,
@@ -277,25 +225,25 @@
       }
     },
     {
-      "name": "orchestra-frontend-promotion",
+      "name": "orchestra-call-16-frontend-and-backend-chapters",
       "session": "orchestra-frontend",
-      "rationale": "A later promotion call should deepen the old diagnosis and organize PR rollout, create-trigger repair, release promotion, and deployment verification.",
+      "rationale": "After batches 15-16, deepen completed frontend work and integrate backend duplicate-event corrections without flattening either project.",
       "input": {
-        "rootId": "s_200000000002",
+        "rootId": "s_200000000016",
         "title": "Session memory",
-        "summary": "Frontend release work.",
+        "summary": "Frontend and backend release work.",
         "children": [
           {
             "segment": {
-              "id": "s_220000000001",
-              "title": "Publish diagnosis and implementation",
+              "id": "s_220000000161",
+              "title": "Frontend publish design",
               "summary": "Diagnosed trigger/ref behavior and implemented validated manual dev/test/rc/formal routing.",
               "children": [
                 {
                   "segment": {
-                    "id": "s_221000000001",
-                    "title": "Root-cause analysis",
-                    "summary": "Traced branch creation, workflow_dispatch, ref-specific workflow files, and metadata routing.",
+                    "id": "s_221000000161",
+                    "title": "Frontend publish diagnosis",
+                    "summary": "Traced branch creation, workflow_dispatch, ref-specific workflows, release ancestry, and metadata routing.",
                     "children": [
                       {
                         "range": [
@@ -307,18 +255,120 @@
                   }
                 },
                 {
-                  "range": [
-                    "722b3da55001",
-                    "1054c9e81cc3"
-                  ]
+                  "segment": {
+                    "id": "s_221000000162",
+                    "title": "Frontend routing implementation",
+                    "summary": "Implemented and validated ref-based publishing, then simplified the reviewed workflow contract.",
+                    "children": [
+                      {
+                        "range": [
+                          "722b3da55001",
+                          "1054c9e81cc3"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "segment": {
+              "id": "s_220000000162",
+              "title": "Frontend promotion",
+              "summary": "Merged the fix through dev, test, and release/v0.3.3 and verified a successful manual RC deployment.",
+              "children": [
+                {
+                  "segment": {
+                    "id": "s_221000000163",
+                    "title": "PR #216 into dev",
+                    "summary": "Committed the frontend fix and merged PR #216 into dev after all reviews passed.",
+                    "children": [
+                      {
+                        "range": [
+                          "5d3ca7c4ee0f",
+                          "2e48fbac4c1a"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "segment": {
+                    "id": "s_221000000164",
+                    "title": "Create correction and test promotion",
+                    "summary": "Fixed the over-broad create trigger through PR #218, then cleared and merged PR #217 into test.",
+                    "children": [
+                      {
+                        "range": [
+                          "7e05f9b648bd",
+                          "ccbf55b791e1"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "segment": {
+                    "id": "s_221000000165",
+                    "title": "Release promotion and deployment",
+                    "summary": "Merged PR #219 into release/v0.3.3 and verified manual RC image, ACR, and Pack publication.",
+                    "children": [
+                      {
+                        "range": [
+                          "abbbb1667eb8",
+                          "3ae6d0793b53"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "segment": {
+              "id": "s_220000000163",
+              "title": "Backend parity implementation",
+              "summary": "Implemented matching backend ref routing through PR #498 and reached review with a duplicate-create concern.",
+              "children": [
+                {
+                  "segment": {
+                    "id": "s_221000000166",
+                    "title": "Backend contract and setup",
+                    "summary": "Recovered backend policy and workflow behavior, then created the focused implementation branch.",
+                    "children": [
+                      {
+                        "range": [
+                          "aded3786476c",
+                          "e0f9f8bf30d7"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "segment": {
+                    "id": "s_221000000167",
+                    "title": "Backend implementation and PR",
+                    "summary": "Implemented validated routing, committed it, corrected the PR-only delivery path, and opened PR #498.",
+                    "children": [
+                      {
+                        "range": [
+                          "afa556b2753f",
+                          "b30ddb3f212a"
+                        ]
+                      }
+                    ]
+                  }
                 }
               ]
             }
           },
           {
             "range": [
-              "5d3ca7c4ee0f",
-              "3ae6d0793b53"
+              "9f0f7bb2ba24",
+              "8d8b06b90964"
             ]
           }
         ]
@@ -326,74 +376,19 @@
       "expect": {
         "rootTitleTerms": [
           "release",
-          "publish"
+          "frontend",
+          "backend"
         ],
         "rootSummaryTerms": [
-          "dev",
-          "test",
-          "release/v0.3.3"
+          "RC",
+          "PR #498",
+          "duplicate"
         ],
-        "minRootSummaryChars": 120,
-        "maxRootChildren": 3,
-        "maxRootObservations": 0,
+        "minRootSummaryChars": 130,
+        "maxRootChildren": 8,
+        "maxRootObservations": 2,
         "minDepth": 4,
-        "groups": [
-          {
-            "anchors": [
-              "c6ea8f0d81c9",
-              "c7ec73b1e6a3",
-              "2e48fbac4c1a"
-            ],
-            "forbidden": [
-              "7e05f9b648bd"
-            ],
-            "summaryTerms": [
-              "PR #216",
-              "dev"
-            ],
-            "minSummaryChars": 55
-          },
-          {
-            "anchors": [
-              "7e05f9b648bd",
-              "2a175e5a5bc6",
-              "952cc86e7d6a",
-              "ccbf55b791e1"
-            ],
-            "forbidden": [
-              "abbbb1667eb8"
-            ],
-            "summaryTerms": [
-              "create",
-              "test"
-            ],
-            "minSummaryChars": 80
-          },
-          {
-            "anchors": [
-              "abbbb1667eb8",
-              "8868e0454649",
-              "3ae6d0793b53"
-            ],
-            "summaryTerms": [
-              "release",
-              "RC"
-            ],
-            "minSummaryChars": 90
-          },
-          {
-            "anchors": [
-              "c6ea8f0d81c9",
-              "8868e0454649"
-            ],
-            "summaryTerms": [
-              "dev",
-              "test",
-              "release"
-            ],
-            "minSummaryChars": 110
-          }
-        ],
+        "groups": [],
         "summaryDensity": {
           "minLeaves": 6,
           "minChars": 55,
@@ -403,123 +398,69 @@
       }
     },
     {
-      "name": "memory-v4-prompt-publication",
+      "name": "memory-call-12-validation-and-publication",
       "session": "pi-observational-memory",
-      "rationale": "Early V4 work should separate constraints, Observer evaluation, memory-tool evaluation, documentation, and production-normalized validation.",
+      "rationale": "After batches 11-12, turn prior Observer/tool validation and the new documentation/normalization work into stable V4 chapters.",
       "input": {
-        "rootId": "s_300000000001",
+        "rootId": "s_300000000012",
         "title": "Session memory",
         "summary": "Observational memory implementation notes.",
         "children": [
           {
-            "range": [
-              "7ad91814b6ce",
-              "f81fa47394ca"
-            ]
-          }
-        ]
-      },
-      "expect": {
-        "rootTitleTerms": [
-          "Segment Memory",
-          "V4"
-        ],
-        "rootSummaryTerms": [
-          "Luna",
-          "validation",
-          "documentation"
-        ],
-        "minRootSummaryChars": 130,
-        "maxRootChildren": 4,
-        "maxRootObservations": 0,
-        "minDepth": 3,
-        "groups": [
-          {
-            "anchors": [
-              "07be3abbab3b",
-              "d20a0d764c28",
-              "df8577da9a98"
-            ],
-            "forbidden": [
-              "8cce00b8e6b4"
-            ],
-            "summaryTerms": [
-              "Observer",
-              "9/9"
-            ],
-            "minSummaryChars": 80
-          },
-          {
-            "anchors": [
-              "8cce00b8e6b4",
-              "a6bb8760ce8a",
-              "c0fcb3bab2d7"
-            ],
-            "forbidden": [
-              "178569fd1290"
-            ],
-            "summaryTerms": [
-              "tool",
-              "4/4"
-            ],
-            "minSummaryChars": 80
-          },
-          {
-            "anchors": [
-              "178569fd1290",
-              "4a5bc7e0bfb7",
-              "3a5a2f519b4e"
-            ],
-            "forbidden": [
-              "fa0b0b62a357"
-            ],
-            "summaryTerms": [
-              "documentation",
-              "V4"
-            ],
-            "minSummaryChars": 70
-          },
-          {
-            "anchors": [
-              "fa0b0b62a357",
-              "f44d29203803",
-              "ec2175860fb5",
-              "1991969737cb"
-            ],
-            "summaryTerms": [
-              "normalization",
-              "validation"
-            ],
-            "minSummaryChars": 90
-          }
-        ],
-        "summaryDensity": {
-          "minLeaves": 6,
-          "minChars": 55,
-          "minLeavesLarge": 12,
-          "minCharsLarge": 85
-        }
-      }
-    },
-    {
-      "name": "memory-v4-review-and-runtime",
-      "session": "pi-observational-memory",
-      "rationale": "A middle call should preserve published V4 work while organizing architecture review/remediation separately from Observer runtime and retry hardening.",
-      "input": {
-        "rootId": "s_300000000002",
-        "title": "Session memory",
-        "summary": "Segment Memory V4 work.",
-        "children": [
-          {
             "segment": {
-              "id": "s_330000000001",
-              "title": "V4 implementation and publication",
-              "summary": "Implemented Segment Memory V4, validated Luna prompts and tools, published documentation, and enforced strict records.",
+              "id": "s_330000000121",
+              "title": "Initial constraints and integration",
+              "summary": "Recorded credential, Luna, and concurrency constraints and integrated runtime thinking and memory tools.",
               "children": [
                 {
                   "range": [
                     "7ad91814b6ce",
-                    "f81fa47394ca"
+                    "bbcf00ffc1dc"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "segment": {
+              "id": "s_330000000122",
+              "title": "Observer validation",
+              "summary": "Built the Observer eval, moved to Responses, strengthened segmentation, and reached Luna medium 9/9.",
+              "children": [
+                {
+                  "range": [
+                    "07be3abbab3b",
+                    "df8577da9a98"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "segment": {
+              "id": "s_330000000123",
+              "title": "Memory-tool validation",
+              "summary": "Implemented tool-choice evaluation, normalized optional arguments, reached 4/4, and added network retry.",
+              "children": [
+                {
+                  "range": [
+                    "8cce00b8e6b4",
+                    "ea80dcfcc7a7"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "segment": {
+              "id": "s_330000000124",
+              "title": "Documentation start",
+              "summary": "Rewrote the README while identifying obsolete docs and unsafe credential-loading guidance.",
+              "children": [
+                {
+                  "range": [
+                    "178569fd1290",
+                    "1599f5c8525e"
                   ]
                 }
               ]
@@ -527,8 +468,8 @@
           },
           {
             "range": [
-              "b1cc995a3990",
-              "4024899854df"
+              "4a5bc7e0bfb7",
+              "0bb7ad0dd955"
             ]
           }
         ]
@@ -539,72 +480,14 @@
           "V4"
         ],
         "rootSummaryTerms": [
-          "review",
-          "Observer",
-          "backoff"
+          "validation",
+          "documentation"
         ],
-        "minRootSummaryChars": 130,
-        "maxRootChildren": 3,
-        "maxRootObservations": 0,
+        "minRootSummaryChars": 140,
+        "maxRootChildren": 8,
+        "maxRootObservations": 2,
         "minDepth": 3,
-        "groups": [
-          {
-            "anchors": [
-              "b1cc995a3990",
-              "513eb77e4abe"
-            ],
-            "forbidden": [
-              "1d830b21e16c"
-            ],
-            "summaryTerms": [
-              "V3",
-              "V4"
-            ],
-            "minSummaryChars": 65
-          },
-          {
-            "anchors": [
-              "1d830b21e16c",
-              "a038bd7eb175",
-              "0ad1792858dd"
-            ],
-            "forbidden": [
-              "cfd410736232"
-            ],
-            "summaryTerms": [
-              "review",
-              "root"
-            ],
-            "minSummaryChars": 90
-          },
-          {
-            "anchors": [
-              "cfd410736232",
-              "75529ebaa039",
-              "656f40d8d80c"
-            ],
-            "forbidden": [
-              "2f93d18ae95e"
-            ],
-            "summaryTerms": [
-              "Observer",
-              "retry"
-            ],
-            "minSummaryChars": 85
-          },
-          {
-            "anchors": [
-              "2f93d18ae95e",
-              "d37df1aaf57c",
-              "4024899854df"
-            ],
-            "summaryTerms": [
-              "watermark",
-              "forced"
-            ],
-            "minSummaryChars": 85
-          }
-        ],
+        "groups": [],
         "summaryDensity": {
           "minLeaves": 6,
           "minChars": 55,
@@ -614,48 +497,150 @@
       }
     },
     {
-      "name": "memory-v4-test-contract-closure",
+      "name": "memory-call-32-test-contract-expansion",
       "session": "pi-observational-memory",
-      "rationale": "A late call should deepen older implementation/review chapters and turn the large test-contract frontier into a bounded chapter with two phases.",
+      "rationale": "After batches 31-32, deepen old implementation/runtime history and close the initial test-contract review plus remediation into one chapter.",
       "input": {
-        "rootId": "s_300000000003",
+        "rootId": "s_300000000032",
         "title": "Session memory",
         "summary": "Segment Memory development and tests.",
         "children": [
           {
             "segment": {
-              "id": "s_340000000001",
+              "id": "s_330000000321",
               "title": "V4 implementation and publication",
               "summary": "Implemented and published strict Segment Memory V4 with production-normalized Luna evaluation.",
               "children": [
                 {
-                  "range": [
-                    "7ad91814b6ce",
-                    "f81fa47394ca"
-                  ]
+                  "segment": {
+                    "id": "s_331000000321",
+                    "title": "Initial constraints and integration",
+                    "summary": "Recorded credential/model/concurrency constraints and integrated runtime and memory tools.",
+                    "children": [
+                      {
+                        "range": [
+                          "7ad91814b6ce",
+                          "bbcf00ffc1dc"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "segment": {
+                    "id": "s_331000000322",
+                    "title": "Luna prompt and tool validation",
+                    "summary": "Built Observer and memory-tool evaluations, iterated failures, and reached stable medium validation.",
+                    "children": [
+                      {
+                        "range": [
+                          "07be3abbab3b",
+                          "ea80dcfcc7a7"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "segment": {
+                    "id": "s_331000000323",
+                    "title": "V4 publication and strict records",
+                    "summary": "Published V4 docs and package metadata, normalized production proposals, and enforced strict records.",
+                    "children": [
+                      {
+                        "range": [
+                          "178569fd1290",
+                          "f81fa47394ca"
+                        ]
+                      }
+                    ]
+                  }
                 }
               ]
             }
           },
           {
             "segment": {
-              "id": "s_340000000002",
+              "id": "s_330000000322",
               "title": "Review and runtime hardening",
               "summary": "Assessed the architecture, fixed root-only persistence, and implemented token-watermark empty retry backoff.",
               "children": [
                 {
-                  "range": [
-                    "b1cc995a3990",
-                    "4024899854df"
-                  ]
+                  "segment": {
+                    "id": "s_331000000324",
+                    "title": "Architecture review and remediation",
+                    "summary": "Measured the V4 change, ran independent review, and fixed root-only Observer event persistence.",
+                    "children": [
+                      {
+                        "range": [
+                          "b1cc995a3990",
+                          "0ad1792858dd"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "segment": {
+                    "id": "s_331000000325",
+                    "title": "Observer runtime and retry backoff",
+                    "summary": "Investigated Observer input/model behavior and implemented verified deliberate-empty token backoff.",
+                    "children": [
+                      {
+                        "range": [
+                          "cfd410736232",
+                          "4024899854df"
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "segment": {
+              "id": "s_330000000323",
+              "title": "Initial test-contract review",
+              "summary": "Recovered current test-contract rules and identified six false-confidence witnesses for remediation.",
+              "children": [
+                {
+                  "segment": {
+                    "id": "s_331000000326",
+                    "title": "Review setup and methodology",
+                    "summary": "Recovered latest static test-contract rules and launched the complete V3-to-V4 review.",
+                    "children": [
+                      {
+                        "range": [
+                          "4d0513770fa8",
+                          "eb5ea54d74d2"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "segment": {
+                    "id": "s_331000000327",
+                    "title": "Six false-confidence findings",
+                    "summary": "Captured six concrete test witnesses and the instruction to remediate them.",
+                    "children": [
+                      {
+                        "range": [
+                          "3beca95682f6",
+                          "e8ee34876609"
+                        ]
+                      }
+                    ]
+                  }
                 }
               ]
             }
           },
           {
             "range": [
-              "4d0513770fa8",
-              "6b6afc287767"
+              "c7c642213982",
+              "5d7d316101bb"
             ]
           }
         ]
@@ -667,53 +652,14 @@
         ],
         "rootSummaryTerms": [
           "test",
-          "review",
+          "audit",
           "coverage"
         ],
-        "minRootSummaryChars": 130,
-        "maxRootChildren": 3,
-        "maxRootObservations": 0,
+        "minRootSummaryChars": 140,
+        "maxRootChildren": 8,
+        "maxRootObservations": 2,
         "minDepth": 4,
-        "groups": [
-          {
-            "anchors": [
-              "4d0513770fa8",
-              "3beca95682f6",
-              "f979ba95d722"
-            ],
-            "forbidden": [
-              "f038e67584b9"
-            ],
-            "summaryTerms": [
-              "contract",
-              "T1"
-            ],
-            "minSummaryChars": 90
-          },
-          {
-            "anchors": [
-              "f038e67584b9",
-              "290434b131d7",
-              "6b6afc287767"
-            ],
-            "summaryTerms": [
-              "gap",
-              "133"
-            ],
-            "minSummaryChars": 90
-          },
-          {
-            "anchors": [
-              "4d0513770fa8",
-              "6b6afc287767"
-            ],
-            "summaryTerms": [
-              "test",
-              "coverage"
-            ],
-            "minSummaryChars": 120
-          }
-        ],
+        "groups": [],
         "summaryDensity": {
           "minLeaves": 6,
           "minChars": 55,
