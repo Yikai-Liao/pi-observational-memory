@@ -1,0 +1,445 @@
+ ── Reflections ──
+ No visible reflections.
+
+ ── Observations ──
+ [064d2667e700] 2026-08-22 07:22 [high] 用户明确要求不要使用 fff 插件。
+ [226084286f38] 2026-08-22 07:22 [high] 用户说明当前工作位于上游仓库的 fork 中，目标是修复 GitHub issue
+ 404：https://github.com/shaftoe/pi-coding-agent-action/issues/404。
+ [a7f76ccb02c7] 2026-08-22 07:22 [medium] 已创建任务“调查并修复 issue 404”，计划阅读上游 issue、定位相关代码与测试
+ 、实现最小修复并运行完整验证。
+ [2f368a8af210] 2026-08-22 07:22 [high] Issue 404 reports that npm extensions such as pi-smart-compact@8.0.8 fail
+ to import because runtime peer @earendil-works/pi-coding-agent (and related Pi peers) cannot resolve from the
+ temporary extension installation; failed extensions are nevertheless shown in the Action's Loaded list.
+ [b2c2d1f98c7a] 2026-08-22 07:22 [high] Issue investigation confirmed the failure is a temporary npm-root
+ peer-resolution boundary, not Smart Compact logic; installing host-matched peers makes import succeed, while
+ installing a second Pi copy is rejected as a production workaround because it could create incompatible duplicate
+ runtimes or class identities.
+ [c69d1febecf5] 2026-08-22 07:23 [medium] User stated that gh is available locally.
+ [f32a81ba10dc] 2026-08-22 07:23 [high] Current implementation in
+ packages/pi-orchestrator/src/pi/resource-loader.ts resolves extensions with DefaultPackageManager using temporary
+ paths and passes enabled extension paths as additionalExtensionPaths; it records every ext.enabled path as loaded
+ before DefaultResourceLoader.reload() actually imports the extensions.
+ [ca32d46ce3d5] 2026-08-22 07:23 [medium] Existing resource-loader tests are in
+ packages/pi-orchestrator/tests/pi/resource-loader.spec.ts and cover npm resolution, disabled/enabled paths,
+ invalid sources, duplicates, whitespace, and resource-loader options, providing the likely regression-test
+ location.
+ [be8c9aa9a9ca] 2026-08-22 07:23 [medium] Upstream issue #404 is open and maintainer shaftoe replied: “Thanks for
+ reporting. Yes please, go ahead and propose a solution if you feel like, I'll have a look at it asap.”
+ [a28a76b79938] 2026-08-22 07:23 [medium] The attempted inspection found no file at
+ packages/pi-orchestrator/src/pi/package-patch.ts; the command reported “sed: can't read
+ packages/pi-orchestrator/src/pi/package-patch.ts: No such file or directory”, while package-patch regression
+ tests document a build-time SDK loader patch in scripts/package.ts.
+ [87ddbe4a26c7] 2026-08-22 07:23 [high] The Agent.ready() flow creates resourceLoaderOptions, then uses Pi SDK
+ createAgentSessionServices to load extensions before createAgentSessionFromServices resolves the model,
+ confirming extension loading occurs during the first service-creation phase.
+ [0ab726851655] 2026-08-22 07:23 [medium] Repository state is develop at ccd45ba, with upstream/develop and
+ origin/develop aligned there; origin is the user's fork https://github.com/Yikai-Liao/pi-coding-agent-action.git
+ and upstream is https://github.com/shaftoe/pi-coding-agent-action.git. A local branch
+ fix/explicit-target-repository is also present.
+ [516556558787] 2026-08-22 07:23 [low] Initial SDK inspection was blocked because
+ node_modules/@earendil-works/pi-coding-agent and node_modules were absent before dependency installation.
+ [ecffa8a91feb] 2026-08-22 07:23 [high] packages/pi-action/scripts/package.ts contains an esbuild
+ patchSDKLoaderPlugin that wraps the SDK extensions/loader.js getAliases() logic in try/catch, returning empty
+ aliases when require.resolve fails in the bundled action; it warns if the pattern no longer matches.
+ [f089dd08474b] 2026-08-22 07:23 [medium] The packaging script bundles packages/pi-action/src/run.ts into
+ dist/index.js and copies only runtime-read SDK assets into dist/pi-sdk; it does not address temporary npm
+ extension peer dependency resolution.
+ [274989940cac] 2026-08-22 07:23 [medium] completed: pnpm install --frozen-lockfile succeeded after Corepack
+ downloaded pnpm 11.15.0, installing 560 packages including @earendil-works/pi-coding-agent, pi-ai, and
+ pi-agent-core 0.84.0; the prepare hook built the action successfully as v2.27.0-unknown.unknown.
+ [17416372ad95] 2026-08-22 07:23 [medium] Commit 48ef797 upgraded the repository's Pi dependencies and
+ pi-orchestrator peerDependencies from ^0.82.1 to ^0.84.0, alongside agent flow and lockfile changes.
+ [b301346b4f93] 2026-08-22 07:24 [high] SDK 0.84.0's extension loader uses jiti with built-mode aliases mapping
+ @earendil-works/pi-coding-agent and Pi peer packages to the host runtime's bundled dist entries; source
+ TypeScript mode instead uses virtualModules and tsconfigPaths.
+ [2102288439bd] 2026-08-22 07:24 [high] DefaultResourceLoader.reload() resolves additionalExtensionPaths through
+ DefaultPackageManager.resolveExtensionSources(..., { temporary: true }), then passes the enabled resolved paths
+ into loadFinalExtensionSet/loadExtensionsCached, where import failures become errors and only successfully
+ created extensions enter extensionsResult.extensions.
+ [77ca7b8b2f38] 2026-08-22 07:24 [medium] The installed @earendil-works/pi-coding-agent 0.84.0 package declares
+ runtime dependencies on matching 0.84.0 versions of pi-agent-core, pi-ai, pi-client, pi-protocol, and pi-tui,
+ while the repository root exposes these packages through pnpm symlinks.
+ [5fe183b4874f] 2026-08-22 07:31 [high] 检查生成的 dist/index.js 后确认：打包后的 SDK loader 仍包含 UVs() alias 逻
+ 辑，尝试通过 createRequire(y) 解析 typebox、typebox/compile、typebox/value，并将 Pi peer 包映射到宿主 bundled
+ dist；解析异常时返回空 aliases。
+ [ee923f811af9] 2026-08-22 07:31 [high] dist/index.js 中扩展导入使用 jiti 的 alias: UVs()（非 bundled 模式），而加
+ 载失败会被捕获为 `Failed to load extension: ...`；因此当前修复方向应聚焦于让临时 npm 扩展导入继承宿主运行时
+ alias，而不是安装第二份 Pi。
+ [99c854b56c67] 2026-08-22 07:31 [medium] 源码与打包产物显示 PI_PACKAGE_DIR 仅用于 Pi SDK 资源目录定位（例如
+ dist/pi-sdk），不能直接解决临时 npm root 中扩展 peer 依赖的模块解析边界。
+ [83dc85b9186d] 2026-08-22 07:31 [high] 源码检查确认：packages/pi-action/src/run.ts 启动时仅通过
+ ensurePackageDirOverride() 设置 PI_PACKAGE_DIR 指向 dist/pi-sdk，并静态注册 Bedrock provider；该入口没有向临时
+ npm 扩展暴露宿主 Node 模块或传递额外 jiti alias。
+ [fcbec937e5c4] 2026-08-22 07:31 [medium] packages/pi-action/scripts/pi-sdk.ts 的 SDK 包定位方式是用
+ import.meta.resolve 解析主入口，再向上查找 package.json，以规避 exports map 不导出 package.json 及仅提供 import
+ 条件的问题。
+ [297e6af7f05f] 2026-08-22 07:32 [high] Confirmed installed jiti is version 2.7.0, and its JitiOptions supports
+ virtualModules; jiti resolves a requested module from virtualModules before normal resolution, making this a
+ viable mechanism for host-peer externalization.
+ [4b4d05ae9829] 2026-08-22 07:32 [medium] packages/pi-orchestrator/src/pi/agent.ts already logs extension import
+ failures after service creation by iterating services.resourceLoader.getExtensions().errors, because the SDK does
+ not expose those failures through services.diagnostics.
+ [1a6a21f2cb69] 2026-08-22 07:33 [medium] The working tree currently has only a generated dist/index.js
+ modification: 1 insertion and 1 deletion; no source implementation or tests have been committed yet.
+ [c22ff73db344] 2026-08-22 07:33 [medium] completed: restored generated dist/index.js to the repository state; the
+ working implementation is now source-only.
+ [f55c759ab3a1] 2026-08-22 07:33 [high] Implemented a tentative build-time patch in
+ packages/pi-action/scripts/package.ts that replaces the SDK bundled Node loader's `{ alias: getAliases() }` with
+ `{ virtualModules: VIRTUAL_MODULES, tryNative: false }`, directly exposing the host-bundled modules to npm
+ extensions instead of resolving from the temporary npm root.
+ [a6b1adbeffed] 2026-08-22 07:34 [high] Added package-patch regression coverage in
+ packages/pi-orchestrator/tests/pi/package-patch.spec.ts for the SDK loader pattern and virtualModules
+ replacement, and changed extension loaded reporting to filter SDK import failures by mutating
+ resourceLoaderOptions.extensionInfo.loaded in Agent.ready().
+ [479b3e2856d0] 2026-08-22 07:34 [medium] completed: targeted Vitest tests passed with 2 files and 24 tests, and
+ pnpm run type-check passed; Prettier check failed only for packages/pi-action/scripts/package.ts and
+ packages/pi-orchestrator/tests/pi/package-patch.spec.ts.
+ [b0d9d659f8a5] 2026-08-22 07:34 [high] User interrupted implementation to ask for the approach rather than having
+ the tentative changes immediately reverted; assistant explained the temporary npm-root peer boundary, reuse of
+ SDK VIRTUAL_MODULES to preserve one host runtime, and filtering Loaded entries after SDK import errors.
+ [ae679d0f7f9f] 2026-08-22 07:36 [high] User asked whether switching bundled Node mode to virtualModules with
+ tryNative false has side effects and why the SDK comments were changed so extensively; this concern remains to be
+ answered.
+ [e5c129881930] 2026-08-22 07:36 [high] SDK loader inspection confirmed VIRTUAL_MODULES maps typebox and Pi
+ packages, including pi-ai compat/oauth/providers and both @earendil-works and @mariozechner names, to statically
+ bundled host module instances; built Node currently uses getAliases(), while Bun and TypeScript source modes use
+ virtualModules.
+ [c0f0c0310c82] 2026-08-22 07:36 [high] jiti documents tryNative as default false and virtualModules as a
+ module-name-to-value map; setting tryNative false explicitly prevents native filesystem loading from bypassing
+ the virtual host modules, while preserving jiti transformation behavior.
+ [c90362f609db] 2026-08-22 07:36 [medium] The current diff rewrites the package-patch and test comments to
+ describe host virtual-module externalization, while the resource-loader comment explains that SDK import success
+ is determined during service creation and Agent.ready finalizes the mutable loaded snapshot.
+ [132a34a78abc] 2026-08-22 07:38 [high] 已从
+ node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js 现场确认 VIRTUAL_MODULES 是 Pi SDK 自
+ 己定义的通用扩展加载映射，并非针对 pi-smart-compact 特制。
+ [a9738613b675] 2026-08-22 07:38 [medium] pi-smart-compact@8.0.8 的构建将 @earendil-works/* 和 typebox 标记为
+ external，其运行时实际导入 @earendil-works/pi-ai、@earendil-works/pi-coding-agent、@earendil-works/pi-tui 和
+ typebox；因此它只是该通用映射的一个使用者。
+ [aa0bd168a4a7] 2026-08-22 07:39 [high] 用户要求完成当前修改并尝试通过测试验证。
+ [b0c22751cc28] 2026-08-22 07:39 [medium] 当前工作树包含 4 个未提交修改文件：packages/pi-action/scripts/package.ts
+ 、packages/pi-orchestrator/src/pi/agent.ts、packages/pi-orchestrator/src/pi/resource-loader.ts、
+ packages/pi-orchestrator/tests/pi/package-patch.spec.ts；尚未看到完成验证结果。
+ [6de065ed9896] 2026-08-22 07:39 [medium] 当前 package-patch 回归测试验证 SDK loader.js 的 bundled Node 分支仍匹配
+ `{ alias: getAliases() }`，并确认替换后使用 `{ virtualModules: VIRTUAL_MODULES, tryNative: false }`。
+ [368e8339505e] 2026-08-22 07:40 [high] SDK DefaultResourceLoaderOptions supports extensionsOverride?: (base:
+ LoadExtensionsResult) => LoadExtensionsResult, alongside extensionFactories and additionalExtensionPaths; this
+ provides a supported hook for filtering or transforming extension load results.
+ [73e87a756c88] 2026-08-22 07:40 [low] No new implementation or validation result was produced in this chunk;
+ investigation was still refining resource-loader error filtering and inspecting existing Agent tests/mocks.
+ [68997bcc5a8f] 2026-08-22 07:40 [high] Confirmed the Pi SDK invokes extensionsOverride after loading extensions
+ and before applying source metadata; LoadExtensionsResult contains extensions, errors ({path,error}), and
+ runtime, and the type is exported from the SDK index.
+ [dfa2763f84f2] 2026-08-22 07:40 [high] Implemented resource-loader filtering via extensionsOverride: failed
+ import paths from result.errors are removed from extensionInfo.loaded, returning the unchanged
+ LoadExtensionsResult; removed the duplicate filtering mutation from Agent.ready(), leaving it responsible only
+ for logging extension errors.
+ [7fcb490b0672] 2026-08-22 07:41 [high] Added a resource-loader test attempting to exercise extensionsOverride
+ with a simulated import failure, and updated the test import to include buildResourceLoaderOptions; the package
+ barrel currently exports resolveExtensions and getResourceLoader but not buildResourceLoaderOptions, so this
+ change may still require export/type-check correction.
+ [914f8c29a4a8] 2026-08-22 07:41 [high] Implemented and exported filterFailedExtensions(info, errors) from
+ packages/pi-orchestrator/src/pi/resource-loader.ts and packages/pi-orchestrator/src/index.ts; it removes SDK
+ import-failure paths from info.loaded, while extensionsOverride delegates to the helper.
+ [29d0e2af22dd] 2026-08-22 07:41 [medium] Updated packages/pi-orchestrator/tests/pi/resource-loader.spec.ts to
+ directly test filterFailedExtensions with two loaded paths and one failed path, avoiding the non-exported
+ buildResourceLoaderOptions helper.
+ [6347d96f093e] 2026-08-22 07:42 [medium] completed: targeted Vitest validation passed with 2 files and 25 tests;
+ pnpm run type-check completed successfully; Prettier formatted the five changed source/test files.
+ [ad9d3f18f186] 2026-08-22 07:42 [medium] completed: pnpm run package rebuilt the action successfully as
+ v2.27.0-unknown.unknown.
+ [f19e207f3731] 2026-08-22 07:43 [high] The rebuilt dist/index.js contains the patched jiti loader branch using
+ virtualModules: eyt and tryNative: false; the build produced a large generated dist/index.js diff (1098 lines
+ changed), alongside source and test modifications.
+ [c4d87b34ad2d] 2026-08-22 07:43 [high] The rebuilt dist/index.js has the same 2502-line length as HEAD but still
+ shows a 1098-line pure replacement diff (549 insertions and 549 deletions), indicating formatting/line-ending or
+ bundler nondeterminism rather than a size change; unrelated generated changes are being investigated for
+ restoration.
+ [b6781c40452d] 2026-08-22 07:43 [high] pi-smart-compact's bundled dist/index.js contains runtime external imports
+ from @earendil-works/pi-coding-agent, @earendil-works/pi-ai, and @earendil-works/pi-tui, plus dynamic imports of
+ @earendil-works/pi-ai/compat, so runtime validation must cover the VIRTUAL_MODULES mappings for these subpaths as
+ well as top-level packages.
+ [ac08aec3d43f] 2026-08-22 07:43 [medium] 当前变更涉及 dist/index.js、packages/pi-action/scripts/package.ts、
+ packages/pi-orchestrator/src/index.ts、packages/pi-orchestrator/src/pi/resource-loader.ts 及两个回归测试文件
+ ；dist/index.js 是已跟踪生成文件，历史上重建也会产生数百至上千行替换。
+ [da8e31dc02e6] 2026-08-22 07:44 [low] 已将 packages/pi-action/scripts/package.ts 中 copySdkAssetDir 的函数签名恢
+ 复为原始多行格式，并运行 Prettier；该文件当前差异为 13 行新增、33 行删除。
+ [b18d8e065576] 2026-08-22 07:44 [high] 尝试用临时扩展验证 jiti virtualModules 时，直接 ESM 导入 jiti 失败，因为根
+ 目录无法解析 jiti；改用 pnpm 内部 jiti.cjs 后，导入 @earendil-works/pi-tui 仍失败，显示当前根 node_modules 没有该
+ 包的顶层解析入口。
+ [c845fc3e974e] 2026-08-22 07:44 [medium] 检查 pnpm 链接后确认 @earendil-works/pi-tui 位于
+ node_modules/.pnpm/node_modules/@earendil-works，而根 node_modules/@earendil-works 仅列出 pi-agent-core、pi-ai、
+ pi-coding-agent 等链接，因此独立 smoke test 的宿主模块导入路径需要按 SDK 实际解析边界调整。
+ [4184e5ce3c24] 2026-08-22 07:45 [high] 用户明确要求不要做非必要的源码格式调整；后续仅保留功能相关代码和必要测试的
+ 格式变化。
+ [9d5936b279fa] 2026-08-22 07:44 [medium] 第一次 virtualModules 扩展 smoke test 失败：从 SDK 包入口解析宿主依赖时
+ 触发 ERR_PACKAGE_PATH_NOT_EXPORTED，因为 @earendil-works/pi-coding-agent 的 package.json 没有可导出的主入口。
+ [e8b8405cc0db] 2026-08-22 07:46 [medium] 调整为直接加载 pnpm store 中的 SDK 文件后，virtualModules smoke test 仍
+ 未完成：jiti 2.7.0 的 CJS dist 导出本身是可调用函数，而非带 createJiti 属性的对象，调用 createJiti 导致
+ TypeError: createJiti is not a function。
+ [59b8fc6a1f02] 2026-08-22 07:45 [medium] 已撤销 packages/pi-orchestrator/src/index.ts 对 filterFailedExtensions
+ 的公共导出，resource-loader.spec.ts 改为从 ../../src/pi/resource-loader 直接导入该内部 helper，避免无必要的公共
+ API 变更。
+ [7d44d2f0f492] 2026-08-22 07:45 [medium] SDK 源码检查确认：loadFinalExtensionSet 返回的 errors 路径来自原始
+ extensionPaths，且加载失败时不会加入 extensions；extensionsOverride 过滤 loaded 快照的路径匹配逻辑与这些路径格式
+ 一致。
+ [79ab7a94d053] 2026-08-22 07:45 [low] 已确认 package.ts 当前 Prettier 检查通过，但 HEAD 原始文件按当前 Prettier
+ 版本检查会报警；因此不能把整文件格式化结果当作必要源码变更。
+ [eb7cc4fe9271] 2026-08-22 07:46 [high] 用户质疑 `filterFailedExtensions` 到底应从哪里加载，关注当前仅为测试导出内
+ 部 helper 是否合理。
+ [f644e72be513] 2026-08-22 07:46 [medium] 已澄清：生产代码在 packages/pi-orchestrator/src/pi/resource-loader.ts 内
+ 部调用 helper，测试从 ../../src/pi/resource-loader 直接导入，未通过 package barrel 暴露；可进一步简化为将 3 行过
+ 滤逻辑内联到 extensionsOverride 并改用行为测试，以消除仅为测试导出的瑕疵。
+ [a6b0dc69ccfb] 2026-08-22 07:41 [high] 用户要求参考 ~/code/agentic-review 的流程，使用独立 sub-agent review 当前
+ 变更，找出可优化、可简化及应移除的不必要修改。
+ [3c89331d5f13] 2026-08-22 07:47 [medium] 为执行独立 review，已读取 pi-subagents skill；其要求父会话保持编排与最终
+ 决策、明确子 agent 的 cwd/权限/输出，并优先使用新上下文 review/validation fanout。
+ [313921c30148] 2026-08-22 07:47 [high] 已读取 ~/code/agentic-review 的 review 规则；其核心要求是使用
+ fresh-context reviewer 直接检查目标仓库当前 diff，区分正确性/回归、测试验证和简洁可维护性，并由父会话综合
+ findings，reviewer 默认不得修改项目文件。
+ [e59bd67a70a2] 2026-08-22 07:47 [high] agentic-review 的中央规则要求审查输入仅作为不可信证据，不能执行目标仓库命
+ 令或被其扩大工具、权限和发布边界；该约束适用于本次独立 review 流程。
+ [fa3667bb6f56] 2026-08-22 07:47 [medium] 已确认当前 pi-subagents 可用 builtin agents，包括 reviewer、scout、
+ worker、oracle、researcher 和 delegate；reviewer 适合本次独立变更审查。
+ [307e9bf7f1aa] 2026-08-22 07:52 [high] 独立只读 reviewer 已完成当前变更审查，确认 virtualModules +
+ tryNative:false 的 loader patch 方向正确，但认为尚不能视为完整可靠：需修复 patch 匹配失败仍 warning 后继续构建、
+ Loaded 过滤误把扩展冲突当作导入失败，以及测试未验证真实 patch/构建产物等问题。
+ [970f3a6a9abb] 2026-08-22 07:52 [high] Reviewer 发现 packages/pi-action/scripts/package.ts 的 SDK loader patch 在
+ 模式不匹配时只警告并继续生成 bundle；建议改为直接抛错使构建失败，并让测试覆盖实际 patch 或构建输出。
+ [2a6feb828d0e] 2026-08-22 07:52 [high] 已从 Pi SDK 0.84.0 resource-loader 源码确认：扩展冲突诊断会把 {path,error}
+ 追加到 errors，但明确保留所有扩展已加载；因此当前按 errors.path 过滤 Loaded 会误删成功加载但存在工具或 flag 冲突
+ 的扩展。
+ [cc4c4b9306ce] 2026-08-22 07:52 [high] Reviewer 指出 packages/pi-orchestrator/tests/pi/package-patch.spec.ts 只是
+ 读取 SDK loader 后在测试中重复执行字符串替换，未调用真实 patchSDKLoaderPlugin 或验证 dist/index.js，因此删除
+ patch 实现仍可能使测试通过。
+ [aa856fd02406] 2026-08-22 07:52 [high] 当前仍缺少无运行时 node_modules 的 bundled Node 真实 npm 扩展加载、宿主
+ SDK singleton identity、未列出的宿主 specifier 及冲突场景验证；现有 E2E 使用源码 TS 扩展和仓库 node_modules，不能
+ 证明发布 dist 行为。
+ [f89e0e998fd4] 2026-08-22 07:53 [high] Implemented patchSDKLoaderSource in packages/pi-action/scripts/package.ts,
+ exporting the real source transformation and throwing an error when the bundled Node loader pattern is not
+ matched; patchSDKLoaderPlugin now delegates to this helper instead of warning and continuing.
+ [ed1e382e81ec] 2026-08-22 07:53 [high] Changed extension Loaded-list reconciliation in
+ packages/pi-orchestrator/src/pi/resource-loader.ts from filtering every SDK error path to updateLoadedExtensions,
+ which retains only paths present in result.extensions and therefore preserves successfully loaded extensions that
+ merely have conflicts.
+ [5098794fc9fd] 2026-08-22 07:53 [medium] The attempted resource-loader test update failed because the expected
+ old test text did not match; packages/pi-orchestrator/tests/pi/resource-loader.spec.ts still imports and calls
+ filterFailedExtensions, so the test must be corrected before validation.
+ [7e128cd10bcd] 2026-08-22 07:54 [high] Updated resource-loader regression coverage to use updateLoadedExtensions
+ and assert that Loaded contains only paths returned by the SDK loader, covering the conflict-safe reconciliation
+ behavior.
+ [59cfc3772bb4] 2026-08-22 07:54 [high] Reworked package-patch tests to import and exercise the real
+ patchSDKLoaderSource helper, including a test that throws when the SDK loader pattern changes; this replaces
+ duplicated string-replacement logic in the test.
+ [7964a8cde651] 2026-08-22 07:54 [medium] Validation completed: targeted Vitest passed with 2 files and 25 tests,
+ type-check passed, Prettier checks passed, and the follow-up ESLint check passed after changing ReadonlyArray<{
+ path: string }> to readonly { path: string }[].
+ [97875ae444a5] 2026-08-22 07:55 [medium] git diff --check remains failing only on generated dist/index.js
+ trailing whitespace at lines 171, 230, 516, 2194, and 2195; source/test lint and targeted validation are clean.
+ [519dbd533653] 2026-08-22 07:56 [high] completed: confirmed a real jiti 2.7.0 virtualModules smoke test loads a
+ temporary TypeScript extension importing @earendil-works/pi-coding-agent, @earendil-works/pi-ai,
+ @earendil-works/pi-tui, and typebox with tryNative:false; the extension executed successfully.
+ [8d8303c180e3] 2026-08-22 07:56 [high] completed: real jiti 2.7.0 smoke test loaded a temporary pi-smart-compact
+ extension using virtualModules mappings for Pi packages and typebox with tryNative:false; import succeeded.
+ [c738fffceabb] 2026-08-22 07:57 [medium] completed: pnpm run package rebuilt the action successfully, and pnpm
+ run validate passed lint, type-check, and Prettier checks.
+ [f39b0b8b149a] 2026-08-22 08:01 [high] The final fresh-context reviewer found no implementation blocker: the
+ loader patch preserves the shared runtime, Loaded reconciliation matches SDK success results, conflicts remain
+ loaded, patch mismatch now fails, and tests call the real patch helper.
+ [87bfd9690f6b] 2026-08-22 08:01 [medium] Final review identified medium test gaps: package-patch tests do not
+ automate peer-resolution/singleton identity, resource-loader tests lack direct failure/conflict/duplicate-path
+ coverage, and mocked reload tests do not validate actual extensionsOverride integration.
+ [296ae69ea314] 2026-08-22 08:04 [medium] The repository intentionally tracks dist/index.js because .gitignore
+ ignores dist/* but explicitly unignores !dist/index.js; git ls-files confirms the file is tracked and modified.
+ [710c83838859] 2026-08-22 08:07 [high] 用户要求补齐自动化回归测试：覆盖 bundled virtualModules 的 singleton/peer
+ resolution，以及 extensionsOverride 的失败、冲突、重复路径场景。
+ [4209b0112f75] 2026-08-22 08:07 [medium] 已创建并开始执行任务“补齐 issue 404 回归测试”，目标是增加上述测试并运行
+ 验证。
+ [07399cf8580c] 2026-08-22 08:08 [medium] 当前检查的实现与测试入口包括
+ packages/pi-orchestrator/src/pi/resource-loader.ts、packages/pi-orchestrator/tests/pi/resource-loader.spec.ts、
+ packages/pi-orchestrator/tests/pi/package-patch.spec.ts 和 packages/pi-action/scripts/package.ts。
+ [ae7c96416563] 2026-08-22 08:09 [high] Automated singleton/peer-resolution smoke-test prototype is currently
+ blocked by package-boundary resolution: resolving from the symlinked host SDK loader cannot find jiti, while
+ resolving from its pnpm real path finds jiti but native require.resolve rejects several SDK peer specifiers with
+ ERR_PACKAGE_PATH_NOT_EXPORTED (including @earendil-works/pi-coding-agent, pi-agent-core, and pi-ai subpaths).
+ [d55f08fb34a4] 2026-08-22 08:08 [medium] The installed Pi SDK package has jiti 2.7.0 as a dependency and its pnpm
+ package-local node_modules contains a jiti symlink, but the repository's top-level node_modules layout does not
+ make jiti resolvable from the symlinked SDK loader.
+ [6f9d675b6dda] 2026-08-22 08:09 [high] The attempted real jiti fixture used virtualModules and tryNative:false to
+ import Pi coding-agent, pi-ai, pi-ai/compat, pi-tui, and typebox, but terminated before execution while
+ constructing virtual modules because native resolution of package entrypoints/subpaths failed with
+ ERR_PACKAGE_PATH_NOT_EXPORTED.
+ [a961e3873525] 2026-08-22 08:10 [high] Automated smoke-test investigation confirmed the installed Pi packages
+ expose only conditional ESM exports (for example @earendil-works/pi-coding-agent '.' maps to ./dist/index.js and
+ pi-ai './compat' maps to ./dist/compat.js), so native require.resolve against these package specifiers can fail
+ with ERR_PACKAGE_PATH_NOT_EXPORTED even though the files exist.
+ [2052990ee791] 2026-08-22 08:10 [medium] The host Pi SDK's pnpm package-local dependency tree contains pi-tui as
+ a symlink under the pi-coding-agent package boundary, while the repository top-level @earendil-works links omit
+ pi-tui; this explains why resolving bundled SDK peer entrypoints from the symlinked loader is sensitive to the
+ package root used by the test.
+ [975fa6e202d7] 2026-08-22 08:10 [high] Direct inspection of the Pi SDK loader source confirms its built Node path
+ uses jiti aliases, Bun uses virtualModules with tryNative:false, and source TypeScript uses virtualModules with
+ tsconfigPaths:true; the virtual map includes typebox, Pi packages, compat/oauth/providers subpaths, and
+ @mariozechner aliases.
+ [47b78b68236e] 2026-08-22 08:11 [high] A real temporary TypeScript extension smoke test imported all configured
+ Pi and TypeBox virtual-module specifiers through jiti 2.7.0 with tryNative:false, but comparing namespace imports
+ directly to the virtual module values printed false for every mapping; this indicates the proposed singleton
+ assertion is invalid as written (namespace wrappers differ), not that module loading itself failed.
+ [1d12d11efe9a] 2026-08-22 08:12 [high] Confirmed that jiti virtualModules with tryNative:false preserves host
+ module identity for named exports across @earendil-works/pi-coding-agent, pi-agent-core, pi-ai (including
+ compat), pi-tui, and pi-ai/providers/all; TypeBox direct namespace object identity is not valid because its
+ default-import interop wraps the module namespace.
+ [c43e65944ee7] 2026-08-22 08:13 [high] Added package-patch regression coverage that imports the real
+ patchSDKLoaderSource helper, checks mismatch failure, and creates a temporary TypeScript extension to verify
+ named host peer exports and TypeBox Type/Compile/Check exports through virtualModules with tryNative:false.
+ [43876d6e1bf7] 2026-08-22 08:14 [high] Expanded resource-loader reconciliation tests to cover import-failure
+ removal, retaining extensions with SDK conflict diagnostics, and preserving duplicate loaded paths via
+ updateLoadedExtensions.
+ [ad47aadfcfcb] 2026-08-22 08:16 [high] Added an integrated resource-loader regression test that invokes
+ extensionsOverride and the logging factory, verifying import-failed paths are omitted, conflict-loaded paths
+ remain listed, and duplicate loaded paths are preserved; targeted Vitest then passed 29 tests.
+ [f43d9cc6aad5] 2026-08-22 08:16 [medium] The new resource-loader test initially failed type-check because
+ options.extensionFactories[0] could be undefined; an explicit braced existence check was added, but type-check
+ was not rerun after the final ESLint curly-brace fix.
+ [e2e0ac48da03] 2026-08-22 08:14 [high] package-patch.spec.ts now performs a real jiti 2.7.0 temporary TypeScript
+ extension smoke test using virtualModules and tryNative:false, asserting named-export host identity across Pi
+ peers and TypeBox mappings, including pi-ai compat/oauth/providers paths.
+ [761dc5d2e3e4] 2026-08-22 08:17 [medium] After targeted formatting, the two regression test files pass Prettier;
+ the diff currently includes generated dist/index.js and substantial package-patch test rewrites, so unnecessary
+ formatting churn remains visible for review against the user's minimal-diff constraint.
+ [6c2526a0e495] 2026-08-22 08:17 [high] 用户指出替换注释时不能把原有详细程度大幅删减，要求保持同等级的背景、行为、
+ 测试覆盖和升级维护说明。
+ [96f11dcc1109] 2026-08-22 08:18 [medium] 已恢复并扩充 package-patch.spec.ts 与 package.ts 的详细注释，准确说明临
+ 时 npm 目录的 peer-resolution 边界、VIRTUAL_MODULES、tryNative:false、共享宿主运行时以及 SDK 升级后的维护提示。
+ [f1c994dd62a2] 2026-08-22 08:19 [medium] completed: 注释更新后的 pnpm run validate 通过，lint、type-check 和
+ Prettier 检查均成功；两个回归测试文件共 29 项测试通过，指定源码文件 git diff --check 无输出。
+ [631e17a324f9] 2026-08-22 08:23 [high] 独立 fresh-context reviewer 最终确认无实现 blocker：package.ts 的 bundled
+ Node loader 使用 VIRTUAL_MODULES 与 tryNative:false 且模式变化会失败，dist/index.js 已包含补丁，resource-loader
+ 按 SDK 成功返回结果保留冲突和重复路径；评论准确充分。
+ [d5617ebd6030] 2026-08-22 08:23 [medium] Reviewer 提出三个可选 P2 风险：package-patch.spec.ts 直接依赖 pnpm
+ virtual-store 和 SDK 内部 dist/jiti 路径；singleton 测试手动构造 jiti 配置而非端到端调用 patched bundled loader；
+ 重复路径测试的保留语义可能与 SDK 加载前去重不一致。
+ [94b1f7c1ca26] 2026-08-22 08:25 [high] 改进 package-patch.spec.ts 的 bundled virtualModules 回归测试：不再手动拼
+ 接 pnpm store 中各包的 dist 路径，而是在 SDK 包目录下创建临时 ESM host module，通过正常包导入加载 Pi peer、
+ TypeBox 和 jiti/static，再将这些宿主模块传给 jiti virtualModules；测试仍验证临时 TypeScript 扩展的命名导出复用宿
+ 主 singleton。
+ [493c19c25065] 2026-08-22 08:25 [medium] host module 临时目录位于 SDK package root，以遵循实际包边界并解决此前
+ symlink/exports-map 下的模块解析问题；测试增加了 hostDir 的嵌套清理，并继续单独清理 extensionDir。
+ [2f748647267c] 2026-08-22 08:25 [medium] completed: after refactoring package-patch.spec.ts to resolve host
+ modules from a temporary ESM module under the SDK package root, targeted package-patch/resource-loader tests
+ passed with 29 tests and type-check passed.
+ [235174ad361c] 2026-08-22 08:31 [high] Decision: treat Loaded as a representation of SDK-actually-loaded
+ extensions and deduplicate paths during reconciliation; updated updateLoadedExtensions in
+ packages/pi-orchestrator/src/pi/resource-loader.ts to filter to SDK-returned paths and wrap the result in Set,
+ and changed tests to expect one entry/count for duplicate paths while retaining conflict-loaded extensions.
+ [b49d3db4b8ca] 2026-08-22 08:31 [medium] After the deduplication source/test edits, validation had not yet been
+ rerun; the last known 29-test/type-check result predates these edits.
+ [761642b24384] 2026-08-22 08:31 [medium] After the deduplication source and test edits, validation had not yet
+ been rerun; the last known 29-test and type-check result predates these edits.
+ [96a1fc3e12e5] 2026-08-22 08:32 [high] User requested explicit semantics and detailed comments for duplicate
+ Loaded paths, including the motivation and before/after behavior of the fix.
+ [6d5488c6a24a] 2026-08-22 08:34 [medium] completed: pnpm run validate passed lint, type-check, and Prettier; the
+ two issue-404 regression suites passed all 29 tests after the comment and pnpm-path changes.
+ [09f53affbe2d] 2026-08-22 08:34 [medium] pnpm run package rebuilt the action successfully, but git diff --check
+ still fails on trailing whitespace in generated dist/index.js at lines 171, 230, 516, 2194, and 2195; source and
+ test changes have no whitespace errors.
+ [c02400d28e08] 2026-08-22 08:34 [medium] completed: pnpm run validate passed lint, type-check, and Prettier, and
+ the two issue-404 regression suites passed all 29 tests after the latest changes.
+ [c2edca40d960] 2026-08-22 08:34 [medium] pnpm run package rebuilt the action; git diff --check still reports
+ trailing whitespace only in tracked generated dist/index.js at lines 171, 230, 516, 2194, and 2195.
+ [cad86785bb16] 2026-08-22 08:34 [medium] 用户要求对 issue #404 当前修改进行最后一次 review。
+ [6f199c5a963e] 2026-08-22 08:37 [high] 完成独立 fresh-context 只读 review：reviewer 确认 package.ts 与
+ dist/index.js 使用 VIRTUAL_MODULES 和 tryNative:false 且 SDK 模式变化会 fail closed；resource-loader 按 SDK 实际
+ 加载结果保留冲突扩展并去重；测试不依赖 pnpm .pnpm 内部路径且覆盖核心 peer singleton。无 blocker，结论为 Approve。
+ [8844d2082a5b] 2026-08-22 08:37 [medium] 最终 reviewer 提出一个可选
+ P2：packages/pi-orchestrator/tests/pi/package-patch.spec.ts 对 OAuth 仅断言已定义，未断言其为宿主
+ singleton；reviewer 未运行测试或验证命令。
+ [4230f6d3fbee] 2026-08-22 08:37 [high] 用户要求开一个详细的英文 PR，说明 issue #404 本次所有变更的动机和实现方法
+ ，关联原 issue，并在 issue #404 下评论告知已开 PR。
+ [ce73c647ef4f] 2026-08-22 08:38 [high] 已创建并开始执行任务“Open and announce the issue 404 PR”，计划检查最终
+ diff 和分支状态、提交并推送修复到用户 fork、向 upstream 开 PR，并在 issue #404 留言附上 PR 链接。
+ [110dc72d7cfa] 2026-08-22 08:38 [medium] 用户确认 gh 可用且已登录 GitHub 账户 Yikai-Liao，拥有 repo scope。
+ [6e6a0d29b211] 2026-08-22 08:38 [high] 当前分支已从 develop 创建为 fix/issue-404-extension-peer-resolution；尚有
+ 5 个未提交修改文件：dist/index.js、packages/pi-action/scripts/package.ts、
+ packages/pi-orchestrator/src/pi/resource-loader.ts 及两个回归测试文件。
+ [b587513a77f0] 2026-08-22 08:38 [critical] completed: committed the issue #404 fix as bda8cf0 with message "fix:
+ load npm extensions from bundled Pi runtime" and pushed it to the user's fork.
+ [e5191b00cbaa] 2026-08-22 08:38 [high] User rejected the abstract branch name
+ fix/issue-404-extension-peer-resolution; the branch was renamed locally and remotely to
+ fix/npm-extension-peer-resolution, and the old remote branch was deleted.
+ [33bc64cd08bb] 2026-08-22 08:39 [critical] completed: opened upstream PR #405, "fix: load npm extensions from the
+ bundled Pi runtime", from Yikai-Liao:fix/npm-extension-peer-resolution into develop with a detailed English
+ description and `Closes #404`: https://github.com/shaftoe/pi-coding-agent-action/pull/405.
+ [40499627af30] 2026-08-22 08:39 [critical] completed: commented on upstream issue #404 announcing PR #405 and
+ summarizing the host VIRTUAL_MODULES, Loaded-list, and regression-test changes:
+ https://github.com/shaftoe/pi-coding-agent-action/issues/404#issuecomment-5379054075.
+ [db89fbc4bb4d] 2026-08-22 08:39 [medium] confirmed: working tree is clean on fix/npm-extension-peer-resolution
+ tracking origin/fix/npm-extension-peer-resolution, and upstream PR #405 is OPEN against develop.
+ [a0366e2ef9a4] 2026-08-22 09:02 [high] User asked to compare this repository's built-in PR Review Action against
+ their ~/code/agentic-review repository specifically on problem- and bug-finding capability, emphasizing
+ differences in prompts, skills, and provided tools while excluding multi-repository integration and operational
+ security concerns.
+ [f551fac3aae9] 2026-08-22 09:02 [high] The repository's built-in .github/workflows/pr.yml uses a short general
+ review prompt focused on issues, bugs, security, and improvements, asks the agent to fetch existing discussion to
+ avoid duplicates, and exposes built-in thread, PR diff, inline review, CI status, workflow log, and shell/file
+ tools without a dedicated staged review skill framework.
+ [3480ebf1d32e] 2026-08-22 09:02 [high] The user's agentic-review workflow drives review through
+ prompts/review-rules.md and staged skills: github-review-context plus review-workspace for complete context and
+ coverage tracking, review-evidence for behavior deltas/contracts/real paths/counterexamples/disconfirmation,
+ optional known-issue skills, and submit-review for root-cause-grouped structured output.
+ [80046fa43f6c] 2026-08-22 09:02 [medium] The review-capability comparison task is in progress; inspected the
+ built-in review workflow/system prompts/tool registry and agentic-review workflow/rules/custom submit tool, but
+ no final comparison has yet been delivered.
+ [9a1d631336a1] 2026-08-22 09:03 [high] The built-in Action defaults loaded_tools to all available Pi and GitHub
+ tools, validates explicit allowlists after session creation, and offers get_pr_diff with default truncation at
+ 1,000 lines/100 KB plus thread, CI, workflow-log, shell, and file tools.
+ [1ed5e4c5fc89] 2026-08-22 09:03 [high] agentic-review enforces high-precision static review through a full-diff
+ change ledger and evidence batches, requiring base/head behavior deltas, independent pre-PR contracts, real
+ execution paths, counterexamples, and explicit disconfirmation before a finding survives.
+ [bcbe8a1cb78d] 2026-08-22 09:03 [high] agentic-review has dedicated performance and test-contract procedures:
+ performance findings require a quantified base/head cost model and realistic scale, while test review can detect
+ false confidence, over-constraint, and zero-marginal redundant tests using actual/oracle tracing and deletion
+ witnesses.
+ [ec49849b4faf] 2026-08-22 09:03 [medium] agentic-review performs root-cause clustering and strict output gating,
+ publishing only proven P0-P2 production issues, T1/T2 test-contract issues, or independently evidenced high-risk
+ changes needing human confirmation; zero-finding reviews are explicitly acceptable.
+ [7d6b5cd5a110] 2026-08-22 09:03 [medium] Confirmed the built-in PR Review workflow is identical between the
+ current branch and upstream/develop by matching SHA-256
+ 7ff81c3e5b09ae0f3dde44c5d57f091c3b19a8c625f4fe8847e71442cff32bb7, so the comparison is not affected by the issue
+ #404 branch changes.
+ [0545ab299f36] 2026-08-22 09:03 [high] Historical review sampling shows the built-in Action can find concrete
+ CI/runtime defects when prompted and equipped with CI/log tools, including pnpm ignored-build failures,
+ minimumReleaseAge violations, Vitest timeouts, floating promises, and stale migration artifacts across upstream
+ PR #392 review iterations.
+ [2c02e2a0fb77] 2026-08-22 09:03 [high] Historical agentic-review runs on PRs #46 and #48 repeatedly found subtle
+ P2 defects in the review rules themselves, including incomplete fixture/mock/helper census coverage,
+ cross-partition fingerprint gaps, and test-only literals incorrectly serving as independent witnesses; subsequent
+ reruns tracked resolved/outdated threads and stopped reporting fixed findings.
+ [9e8b6def9166] 2026-08-22 09:07 [high] Independent audit found the built-in PR Review Action has strong
+ repository, PR diff/thread, CI-status, workflow-log, shell, and file access, but its short prompt lacks mandatory
+ changed-file coverage, behavior tracing, counterexample/disconfirmation, actionable finding thresholds,
+ severity/confidence, and explicit no-finding criteria.
+ [958387c35f0d] 2026-08-22 09:07 [high] Independent audit identified a built-in CI evidence bug: parameterless
+ get_ci_status uses deps.context.sha rather than resolving the current PR head, so pull_request runs may query the
+ synthetic merge SHA and miss head checks despite prompt guidance that pull_number may be omitted.
+ [3b7857636b15] 2026-08-22 09:07 [high] Built-in review coverage limitations include prefix-only diff truncation
+ at 1,000 lines/100 KB without paging or per-file recovery, ordinary comments capped at 100, inline comments
+ capped at 50, omission of review summary bodies/states, and no indication that history was truncated.
+ [850ece1a9032] 2026-08-22 09:07 [medium] Built-in review continuity is model-only: each PR event starts fresh,
+ prior session artifacts are not restored, outputs append top-level comments, and there are no finding
+ fingerprints, commit associations, or resolved/outdated state tracking; dependency review is also requested while
+ pnpm-lock.yaml is hidden from the primary diff.
+ [67ff924eec3c] 2026-08-22 09:07 [high] Independent audit assessed agentic-review as a strong high-precision
+ static reviewer due to mandatory full-diff ledger coverage, independent contracts, real-path tracing, base/head
+ counterexamples, disconfirmation, strict P0-P2/T1/T2 gates, root-cause deduplication, and fail-safe incremental
+ checkpoints.
+ [12b83cbe0f2f] 2026-08-22 09:07 [high] agentic-review deliberately excludes tests, builds, type checks,
+ profilers, query plans, and CI/log evidence from its reasoning procedure, so it can miss runtime-only,
+ environment-specific, flaky, integration, race, query-plan, and already-CI-demonstrated failures that the
+ built-in Action can investigate.
+ [0bef536d92bf] 2026-08-22 09:07 [medium] agentic-review has an unresolved scalability risk: exhaustive file/hunk
+ and test-census coverage must complete within a 15-minute agent timeout, with no size gate, deterministic
+ continuation protocol, or explicit degraded result for large PRs.
+ [47d4aa7245bb] 2026-08-22 09:07 [medium] agentic-review publication is non-atomic: publishReview creates the new
+ review before updating historical threads, and a partial API failure followed by retry can duplicate summaries
+ because no persisted publication id or run-level idempotency guard exists.
