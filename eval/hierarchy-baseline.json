@@ -1,0 +1,194 @@
+{
+  "model": "gpt-5.6-luna-2",
+  "reasoning": "medium",
+  "prompt": "production",
+  "casesPassed": 0,
+  "casesTotal": 7,
+  "checksPassed": 47,
+  "checksTotal": 108,
+  "results": [
+    {
+      "name": "swarm-architecture-survey",
+      "passed": false,
+      "checksPassed": 6,
+      "checksTotal": 14,
+      "failures": [
+        "Root title missing: SwarmForge",
+        "Root summary missing: handoff, dashboard",
+        "Root summary too short: 32 < 100",
+        "tree depth 2 < 3",
+        "missing exact Segment ca3ad133f8d9..8c9901ea412b",
+        "missing exact Segment f228a8fbbf34..2abc3bd0b641",
+        "missing exact Segment ca3ad133f8d9..2abc3bd0b641",
+        "missing exact Segment da8bb1a435ba..697913ef7525"
+      ],
+      "warnings": [],
+      "metrics": {
+        "observations": 27,
+        "segments": 3,
+        "depth": 2,
+        "rootChildren": 2,
+        "rootTitle": "Session memory",
+        "rootSummaryChars": 32
+      }
+    },
+    {
+      "name": "swarm-pi-integration-decision",
+      "passed": false,
+      "checksPassed": 9,
+      "checksTotal": 15,
+      "failures": [
+        "Root title missing: SwarmForge, Pi",
+        "Root summary missing: handoff, extension",
+        "Root summary too short: 34 < 110",
+        "tree depth 2 < 3",
+        "missing exact Segment 0c8790c74dcb..4bf31d16cc45",
+        "missing exact Segment 89138eda0cf0..dd9c556e2fc1"
+      ],
+      "warnings": [],
+      "metrics": {
+        "observations": 50,
+        "segments": 4,
+        "depth": 2,
+        "rootChildren": 3,
+        "rootTitle": "Session memory",
+        "rootSummaryChars": 34
+      }
+    },
+    {
+      "name": "orchestra-frontend-publish-design",
+      "passed": false,
+      "checksPassed": 6,
+      "checksTotal": 14,
+      "failures": [
+        "Root title missing: release, publish",
+        "Root summary missing: manual, RC, routing",
+        "Root summary too short: 31 < 110",
+        "tree depth 2 < 3",
+        "missing exact Segment 737a2b11bf4a..6d38436a2d51",
+        "missing exact Segment 722b3da55001..df1db1e8d2a6",
+        "missing exact Segment 737a2b11bf4a..df1db1e8d2a6",
+        "missing exact Segment fd1bb2c9426b..1054c9e81cc3"
+      ],
+      "warnings": [],
+      "metrics": {
+        "observations": 33,
+        "segments": 4,
+        "depth": 2,
+        "rootChildren": 3,
+        "rootTitle": "Session memory",
+        "rootSummaryChars": 31
+      }
+    },
+    {
+      "name": "orchestra-frontend-promotion",
+      "passed": false,
+      "checksPassed": 6,
+      "checksTotal": 15,
+      "failures": [
+        "Root title missing: release, publish",
+        "Root summary missing: dev, test, release/v0.3.3",
+        "Root summary too short: 22 < 120",
+        "tree depth 3 < 4",
+        "missing exact Segment c6ea8f0d81c9..2e48fbac4c1a",
+        "missing exact Segment 7e05f9b648bd..ccbf55b791e1",
+        "missing exact Segment abbbb1667eb8..8868e0454649",
+        "missing exact Segment 5d3ca7c4ee0f..8868e0454649",
+        "missing exact Segment 20405ec4c2e3..3ae6d0793b53"
+      ],
+      "warnings": [],
+      "metrics": {
+        "observations": 52,
+        "segments": 4,
+        "depth": 3,
+        "rootChildren": 2,
+        "rootTitle": "Session memory",
+        "rootSummaryChars": 22
+      }
+    },
+    {
+      "name": "memory-v4-prompt-publication",
+      "passed": false,
+      "checksPassed": 8,
+      "checksTotal": 18,
+      "failures": [
+        "Root title missing: Segment Memory, V4",
+        "Root summary missing: Luna, validation, documentation",
+        "Root summary too short: 42 < 130",
+        "Root has 7 children > 4",
+        "tree depth 2 < 3",
+        "missing exact Segment 7ad91814b6ce..bbcf00ffc1dc",
+        "missing exact Segment 07be3abbab3b..df8577da9a98",
+        "missing exact Segment 8cce00b8e6b4..ea80dcfcc7a7",
+        "missing exact Segment 07be3abbab3b..ea80dcfcc7a7",
+        "missing exact Segment fa0b0b62a357..f81fa47394ca"
+      ],
+      "warnings": [],
+      "metrics": {
+        "observations": 45,
+        "segments": 8,
+        "depth": 2,
+        "rootChildren": 7,
+        "rootTitle": "Session memory",
+        "rootSummaryChars": 42
+      }
+    },
+    {
+      "name": "memory-v4-review-and-runtime",
+      "passed": false,
+      "checksPassed": 3,
+      "checksTotal": 16,
+      "failures": [
+        "normalization warnings: rejected non-contiguous Segment replacement for s_8bbedf83adb9; node cfd410736232 has multiple parents",
+        "Root title missing: Segment Memory, V4",
+        "Root summary missing: review, Observer, backoff",
+        "Root summary too short: 23 < 130",
+        "Root has 51 children > 3",
+        "Root has 50 direct Observations > 0",
+        "tree depth 2 < 3",
+        "missing exact Segment b1cc995a3990..513eb77e4abe",
+        "missing exact Segment 1d830b21e16c..0ad1792858dd",
+        "missing exact Segment b1cc995a3990..0ad1792858dd",
+        "missing exact Segment cfd410736232..656f40d8d80c",
+        "missing exact Segment 2f93d18ae95e..4024899854df",
+        "missing exact Segment cfd410736232..4024899854df"
+      ],
+      "warnings": [
+        "rejected non-contiguous Segment replacement for s_8bbedf83adb9",
+        "node cfd410736232 has multiple parents"
+      ],
+      "metrics": {
+        "observations": 95,
+        "segments": 2,
+        "depth": 2,
+        "rootChildren": 51,
+        "rootTitle": "Session memory",
+        "rootSummaryChars": 23
+      }
+    },
+    {
+      "name": "memory-v4-test-contract-closure",
+      "passed": false,
+      "checksPassed": 9,
+      "checksTotal": 16,
+      "failures": [
+        "Root title missing: Segment Memory, V4",
+        "Root summary missing: review, coverage",
+        "Root summary too short: 37 < 130",
+        "tree depth 2 < 4",
+        "missing exact Segment 7ad91814b6ce..4024899854df",
+        "missing exact Segment 4d0513770fa8..f979ba95d722",
+        "missing exact Segment f038e67584b9..6b6afc287767"
+      ],
+      "warnings": [],
+      "metrics": {
+        "observations": 132,
+        "segments": 4,
+        "depth": 2,
+        "rootChildren": 3,
+        "rootTitle": "Session memory",
+        "rootSummaryChars": 37
+      }
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+round	prompt	cases_passed	checks_passed	status	note
+baseline	production@a2613d5	0/7	47/108	baseline	Shallow one-level grouping; all Root titles stayed generic and summaries were 22-42 chars.

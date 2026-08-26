@@ -1,0 +1,251 @@
+{
+  "version": 1,
+  "description": "Seven standardized medium-reasoning Observer calls derived from frozen real V3 sessions. Cases test informative Root metadata, bounded Root fan-out, age-deepened hierarchy, truthful phase/chapter ranges, and information-dense summaries.",
+  "cases": [
+    {
+      "name": "swarm-architecture-survey",
+      "session": "swarm-forge",
+      "rationale": "A large first closed survey should become chapter→phase hierarchy rather than one flat Segment.",
+      "input": {
+        "rootId": "s_100000000001",
+        "title": "Session memory",
+        "summary": "SwarmForge project observations.",
+        "children": [{ "range": ["ca3ad133f8d9", "697913ef7525"] }]
+      },
+      "expect": {
+        "rootTitleTerms": ["SwarmForge"],
+        "rootSummaryTerms": ["handoff", "dashboard"],
+        "minRootSummaryChars": 100,
+        "maxRootChildren": 3,
+        "maxRootObservations": 0,
+        "minDepth": 3,
+        "segments": [
+          { "range": ["ca3ad133f8d9", "8c9901ea412b"], "summaryTerms": ["startup", "role"], "minSummaryChars": 55 },
+          { "range": ["f228a8fbbf34", "2abc3bd0b641"], "summaryTerms": ["handoff", "queue"], "minSummaryChars": 55 },
+          { "range": ["ca3ad133f8d9", "2abc3bd0b641"], "summaryTerms": ["worktree", "handoff"], "minSummaryChars": 80 },
+          { "range": ["da8bb1a435ba", "697913ef7525"], "summaryTerms": ["dashboard", "test"], "minSummaryChars": 70 }
+        ]
+      }
+    },
+    {
+      "name": "swarm-pi-integration-decision",
+      "session": "swarm-forge",
+      "rationale": "A later call should preserve old chapters while recursively organizing a closed Pi investigation and decision.",
+      "input": {
+        "rootId": "s_100000000002",
+        "title": "Session memory",
+        "summary": "SwarmForge notes and Pi questions.",
+        "children": [
+          {
+            "segment": {
+              "id": "s_110000000001",
+              "title": "Architecture survey",
+              "summary": "Mapped SwarmForge orchestration, handoff transport, dashboard, runtime safety, and tests.",
+              "children": [{ "range": ["ca3ad133f8d9", "697913ef7525"] }]
+            }
+          },
+          {
+            "segment": {
+              "id": "s_110000000002",
+              "title": "Roles and interaction",
+              "summary": "Examined role prompts, persisted task contracts, and the unvalidated human intake path.",
+              "children": [{ "range": ["93c06420f2b4", "07de952f4d5a"] }]
+            }
+          },
+          { "range": ["0c8790c74dcb", "dd9c556e2fc1"] }
+        ]
+      },
+      "expect": {
+        "rootTitleTerms": ["SwarmForge", "Pi"],
+        "rootSummaryTerms": ["handoff", "extension"],
+        "minRootSummaryChars": 110,
+        "maxRootChildren": 3,
+        "maxRootObservations": 0,
+        "minDepth": 3,
+        "segments": [
+          { "range": ["0c8790c74dcb", "4bf31d16cc45"], "summaryTerms": ["tmux", "steer"], "minSummaryChars": 65 },
+          { "range": ["89138eda0cf0", "dd9c556e2fc1"], "summaryTerms": ["extension", "receipt"], "minSummaryChars": 70 },
+          { "range": ["0c8790c74dcb", "dd9c556e2fc1"], "summaryTerms": ["Pi", "extension"], "minSummaryChars": 100 }
+        ]
+      }
+    },
+    {
+      "name": "orchestra-frontend-publish-design",
+      "session": "orchestra-frontend",
+      "rationale": "The first frontend release investigation contains diagnosis, an initial fix, and a corrected routing contract that require multiple levels.",
+      "input": {
+        "rootId": "s_200000000001",
+        "title": "Session memory",
+        "summary": "Release workflow investigation.",
+        "children": [{ "range": ["737a2b11bf4a", "1054c9e81cc3"] }]
+      },
+      "expect": {
+        "rootTitleTerms": ["release", "publish"],
+        "rootSummaryTerms": ["manual", "RC", "routing"],
+        "minRootSummaryChars": 110,
+        "maxRootChildren": 3,
+        "maxRootObservations": 0,
+        "minDepth": 3,
+        "segments": [
+          { "range": ["737a2b11bf4a", "6d38436a2d51"], "summaryTerms": ["workflow_dispatch", "release"], "minSummaryChars": 90 },
+          { "range": ["722b3da55001", "df1db1e8d2a6"], "summaryTerms": ["RC_BRANCH", "metadata"], "minSummaryChars": 60 },
+          { "range": ["737a2b11bf4a", "df1db1e8d2a6"], "summaryTerms": ["trigger", "RC"], "minSummaryChars": 100 },
+          { "range": ["fd1bb2c9426b", "1054c9e81cc3"], "summaryTerms": ["dev", "test", "rc"], "minSummaryChars": 90 }
+        ]
+      }
+    },
+    {
+      "name": "orchestra-frontend-promotion",
+      "session": "orchestra-frontend",
+      "rationale": "A later promotion call should deepen the old diagnosis and organize PR rollout, create-trigger repair, release promotion, and deployment verification.",
+      "input": {
+        "rootId": "s_200000000002",
+        "title": "Session memory",
+        "summary": "Frontend release work.",
+        "children": [
+          {
+            "segment": {
+              "id": "s_220000000001",
+              "title": "Publish diagnosis and implementation",
+              "summary": "Diagnosed trigger/ref behavior and implemented validated manual dev/test/rc/formal routing.",
+              "children": [
+                {
+                  "segment": {
+                    "id": "s_221000000001",
+                    "title": "Root-cause analysis",
+                    "summary": "Traced branch creation, workflow_dispatch, ref-specific workflow files, and metadata routing.",
+                    "children": [{ "range": ["737a2b11bf4a", "6d38436a2d51"] }]
+                  }
+                },
+                { "range": ["722b3da55001", "1054c9e81cc3"] }
+              ]
+            }
+          },
+          { "range": ["5d3ca7c4ee0f", "3ae6d0793b53"] }
+        ]
+      },
+      "expect": {
+        "rootTitleTerms": ["release", "publish"],
+        "rootSummaryTerms": ["dev", "test", "release/v0.3.3"],
+        "minRootSummaryChars": 120,
+        "maxRootChildren": 3,
+        "maxRootObservations": 0,
+        "minDepth": 4,
+        "segments": [
+          { "range": ["c6ea8f0d81c9", "2e48fbac4c1a"], "summaryTerms": ["PR #216", "dev"], "minSummaryChars": 55 },
+          { "range": ["7e05f9b648bd", "ccbf55b791e1"], "summaryTerms": ["create", "test"], "minSummaryChars": 80 },
+          { "range": ["abbbb1667eb8", "8868e0454649"], "summaryTerms": ["PR #219", "release"], "minSummaryChars": 60 },
+          { "range": ["5d3ca7c4ee0f", "8868e0454649"], "summaryTerms": ["dev", "test", "release"], "minSummaryChars": 110 },
+          { "range": ["20405ec4c2e3", "3ae6d0793b53"], "summaryTerms": ["32960231353", "ACR"], "minSummaryChars": 65 }
+        ]
+      }
+    },
+    {
+      "name": "memory-v4-prompt-publication",
+      "session": "pi-observational-memory",
+      "rationale": "Early V4 work should separate constraints, Observer evaluation, memory-tool evaluation, documentation, and production-normalized validation.",
+      "input": {
+        "rootId": "s_300000000001",
+        "title": "Session memory",
+        "summary": "Observational memory implementation notes.",
+        "children": [{ "range": ["7ad91814b6ce", "f81fa47394ca"] }]
+      },
+      "expect": {
+        "rootTitleTerms": ["Segment Memory", "V4"],
+        "rootSummaryTerms": ["Luna", "validation", "documentation"],
+        "minRootSummaryChars": 130,
+        "maxRootChildren": 4,
+        "maxRootObservations": 0,
+        "minDepth": 3,
+        "segments": [
+          { "range": ["7ad91814b6ce", "bbcf00ffc1dc"], "summaryTerms": ["API", "runtime"], "minSummaryChars": 65 },
+          { "range": ["07be3abbab3b", "df8577da9a98"], "summaryTerms": ["5/9", "9/9"], "minSummaryChars": 80 },
+          { "range": ["8cce00b8e6b4", "ea80dcfcc7a7"], "summaryTerms": ["2/4", "4/4"], "minSummaryChars": 80 },
+          { "range": ["07be3abbab3b", "ea80dcfcc7a7"], "summaryTerms": ["Observer", "tool"], "minSummaryChars": 110 },
+          { "range": ["178569fd1290", "3a5a2f519b4e"], "summaryTerms": ["documentation", "V4"], "minSummaryChars": 70 },
+          { "range": ["fa0b0b62a357", "f81fa47394ca"], "summaryTerms": ["normalization", "record"], "minSummaryChars": 90 }
+        ]
+      }
+    },
+    {
+      "name": "memory-v4-review-and-runtime",
+      "session": "pi-observational-memory",
+      "rationale": "A middle call should preserve published V4 work while organizing architecture review/remediation separately from Observer runtime and retry hardening.",
+      "input": {
+        "rootId": "s_300000000002",
+        "title": "Session memory",
+        "summary": "Segment Memory V4 work.",
+        "children": [
+          {
+            "segment": {
+              "id": "s_330000000001",
+              "title": "V4 implementation and publication",
+              "summary": "Implemented Segment Memory V4, validated Luna prompts and tools, published documentation, and enforced strict records.",
+              "children": [{ "range": ["7ad91814b6ce", "f81fa47394ca"] }]
+            }
+          },
+          { "range": ["b1cc995a3990", "4024899854df"] }
+        ]
+      },
+      "expect": {
+        "rootTitleTerms": ["Segment Memory", "V4"],
+        "rootSummaryTerms": ["review", "Observer", "backoff"],
+        "minRootSummaryChars": 130,
+        "maxRootChildren": 3,
+        "maxRootObservations": 0,
+        "minDepth": 3,
+        "segments": [
+          { "range": ["b1cc995a3990", "513eb77e4abe"], "summaryTerms": ["V3", "V4"], "minSummaryChars": 65 },
+          { "range": ["1d830b21e16c", "0ad1792858dd"], "summaryTerms": ["review", "root"], "minSummaryChars": 90 },
+          { "range": ["b1cc995a3990", "0ad1792858dd"], "summaryTerms": ["architecture", "review"], "minSummaryChars": 105 },
+          { "range": ["cfd410736232", "656f40d8d80c"], "summaryTerms": ["Observer", "retry"], "minSummaryChars": 85 },
+          { "range": ["2f93d18ae95e", "4024899854df"], "summaryTerms": ["watermark", "forced"], "minSummaryChars": 85 },
+          { "range": ["cfd410736232", "4024899854df"], "summaryTerms": ["backoff", "Observer"], "minSummaryChars": 110 }
+        ]
+      }
+    },
+    {
+      "name": "memory-v4-test-contract-closure",
+      "session": "pi-observational-memory",
+      "rationale": "A late call should deepen older implementation/review chapters and turn the large test-contract frontier into a bounded chapter with two phases.",
+      "input": {
+        "rootId": "s_300000000003",
+        "title": "Session memory",
+        "summary": "Segment Memory development and tests.",
+        "children": [
+          {
+            "segment": {
+              "id": "s_340000000001",
+              "title": "V4 implementation and publication",
+              "summary": "Implemented and published strict Segment Memory V4 with production-normalized Luna evaluation.",
+              "children": [{ "range": ["7ad91814b6ce", "f81fa47394ca"] }]
+            }
+          },
+          {
+            "segment": {
+              "id": "s_340000000002",
+              "title": "Review and runtime hardening",
+              "summary": "Assessed the architecture, fixed root-only persistence, and implemented token-watermark empty retry backoff.",
+              "children": [{ "range": ["b1cc995a3990", "4024899854df"] }]
+            }
+          },
+          { "range": ["4d0513770fa8", "6b6afc287767"] }
+        ]
+      },
+      "expect": {
+        "rootTitleTerms": ["Segment Memory", "V4"],
+        "rootSummaryTerms": ["test", "review", "coverage"],
+        "minRootSummaryChars": 130,
+        "maxRootChildren": 3,
+        "maxRootObservations": 0,
+        "minDepth": 4,
+        "segments": [
+          { "range": ["7ad91814b6ce", "4024899854df"], "summaryTerms": ["implementation", "review"], "minSummaryChars": 120 },
+          { "range": ["4d0513770fa8", "f979ba95d722"], "summaryTerms": ["contract", "T1"], "minSummaryChars": 90 },
+          { "range": ["f038e67584b9", "6b6afc287767"], "summaryTerms": ["gap", "133"], "minSummaryChars": 90 },
+          { "range": ["4d0513770fa8", "6b6afc287767"], "summaryTerms": ["test", "coverage"], "minSummaryChars": 120 }
+        ]
+      }
+    }
+  ]
+}
