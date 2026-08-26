@@ -6,15 +6,15 @@
 
 ## 1. 目标与范围
 
-本次改造要把当前的“Observations + Reflections + Drop”记忆池，演化成一个**以 Observation 为叶子、以事后封闭的工作区间为 Segment、按深度渲染的有序树**。
+本次改造要把当前的“Observations + Reflections + Drop”记忆池，演化成一个**以 Observation 为叶子、以事后封闭的工作区间为 Segment、以当前唯一无 parent 节点为 Root、按深度渲染的有序树**。
 
 核心目标：
 
-1. 保留当前已经验证过的 Observation 生成机制和 source provenance。
+1. 保留当前已经验证过的 Observation 语义提取、coverage 和 source provenance；删除只服务于 V3 平铺/Dropper 的 timestamp、relevance 和持久化 tokenCount。
 2. 不再依赖保守而经常无产出的 Reflection/Drop 来控制长期记忆体积。
 3. 让旧记忆通过反复的阶段归纳自然变深，让近期记忆自然保持浅层和高细节。
-4. Compact 时只按用户配置的 `memoryDepth` 截取树的表示前沿，不设计正常路径上的 token planner、遗忘曲线或节点权重优化器。
-5. Observation、Segment forest 和 Root TLDR 由一次 Observer 模型输出共同产生；Observer 每累计配置数量的成功 batches 时自己执行 Segment，每次 Compact 则强制执行。
+4. Compact 时只按用户配置的 `memoryDepth` 从 Root 递归展示节点；每个访问到的 Segment 和 Observation 都保留，不设计正常路径上的 token planner、遗忘曲线或节点权重优化器。
+5. Observer 用一次结构化模型输出返回递归嵌套的树增量：新 Observation、新 Segment 和已有 Root Segment 的新版本共用一种节点结构；Observer 每累计配置数量的成功 batches 时自己执行 Segment，每次 Compact 则强制执行。
 6. 允许模型主动查看、展开当前或历史 Session 的 Segment/Observation，并最终支持 JSONL 导出。
 7. 继续使用 Pi Session JSONL 和 custom entry 持久化，不引入常驻后台进程、SQLite 或另一套中心存储。
 
@@ -35,12 +35,12 @@
 以下内容来自最新的 `segment_memory_tree.md` 和用户在头脑风暴中的明确取舍，视为硬约束：
 
 - Observation 继续作为最小记忆单位。
-- Segment 是**事后**识别出的封闭历史阶段，不是预先创建、等待未来内容挂载的 Plan；“封闭”只表示这段已经发生的工作可以被总结，不要求整体任务成功完成。
-- 一个节点只能属于一个父 Segment。
+- 非 Root Segment 是**事后**识别出的封闭历史阶段，不是预先创建、等待未来内容挂载的 Plan；“封闭”只表示这段已经发生的工作可以被总结，不要求整体任务成功完成。Segment Root 覆盖整个持续发展的 Session，不受封闭区间约束。
+- Root 没有 parent；除此之外，每个当前节点必须恰好属于一个父 Segment。
 - Segment 至少有 ID、标题、摘要和有序 children。
 - 整体是有时间顺序的树：旧侧逐渐变深，新侧保持浅。
-- Root 深度为 0；Compact 按固定树深度决定保留 Segment summary 还是继续展开。
-- Observer 平时按 token 阈值后台运行；每累计配置数量的成功 batches 时在同一输出中生成 Segment forest，每次 Compact 则强制生成。
+- Root 是深度为 0、唯一没有 parent 的节点：第一个 Observation 自身是 Root，第二个出现后创建一个 Segment 作为新 Root。
+- Observer 平时按 token 阈值后台运行；每累计配置数量的成功 batches 时在同一递归树增量中生成 Segment，每次 Compact 则强制生成。
 - 模型可通过类似 `ls`、`read` 的工具主动展开历史。
 - 工具支持可选 Session ID；省略时读取当前 Session。
 - 持久化依赖 Pi custom entry；重启时从 branch entries 重建。
@@ -52,7 +52,7 @@
 以下方向不进入目标架构：
 
 - 以 memory token budget 作为正常渲染策略。
-- rate-distortion/frontier optimization。
+- rate-distortion optimization。
 - recency decay curve、时间衰减函数或 semantic weight。
 - node count 作为用户的信息预算。
 - 正常路径上的 emergency dynamic depth。
@@ -63,7 +63,7 @@ Token 仍用于以下既有、不同语义的地方：
 - Pi proactive compact 的触发进度。
 - `/om:status` 和 debug log 中的本地诊断统计。
 
-它不决定树的正常渲染前沿。
+它不改变按 `memoryDepth` 递归展示节点的结果。
 
 ### 2.3 `om_example.txt` 暴露的真实问题
 
@@ -109,78 +109,76 @@ root
 
 - 保留现有 Observation 的提取规则和 source provenance。
 - Reflector、Dropper 及 observation pool/full-fold 机制退出主流程。
-- 一个 Observer 模型调用同时承担 Observation 提取、按 cadence 生成 Segment forest、更新 Root TLDR；不再存在第二个 Segment Agent。
-- Observation 永不因 Segment 而物理删除；Segment 只是不可变的结构节点。
+- 一个 Observer 模型调用同时承担 Observation 提取、按 cadence 生成嵌套 Segment，并在 Root 已成为 Segment 后输出其同 ID 新版本；不再存在第二个 Segment Agent。
+- Observation 永不因 Segment 而物理删除；Segment 是由 append-only records 投影出的结构节点。
 
-### 3.2 Root 是虚拟结构节点，并持有最新 Session TLDR
+### 3.2 Root 是位置，不是节点类型
 
-Root 的结构仍由 fold 结果中的顶层 frontier 表示：
+Root 只是当前树中唯一没有 parent 的节点，类型为 `Observation | Segment`：
 
-```ts
-rootChildren: NodeId[]
-```
+1. 没有 Observation 时没有 Root；
+2. 第一个 Observation 本身成为 Root；
+3. 第二个 Observation 出现时，Observer proposal 引入一个无 ID Segment，代码生成其 ID并以已有和新增 Observations 为有序 children，让该 Segment 成为新的 Root；同一 batch 一次产生多个 Observations 时直接以全部新 leaves 形成 Root；
+4. 此后 Root 保持为 Segment，并随 Observation 追加和 Segment range replacement 产生同 ID 新版本。
 
-此外，Root 持有一个由 Observer 生成的极短 TLDR，说明该 Session 到目前为止主要做了什么。它是跨 Session discovery 的首要描述；Pi `sessionName` 仍可显示，但第一轮对话产生的标题不能替代对整段 Session 的总结。
+所有 Segment 使用完全相同的数据、ID、summary 和验证规则，包括作为 Root 的 Segment；每个 Segment 都必须至少有两个 direct children。`MemoryTree.root` 只是对当前根节点的普通引用，不是专用 ID、subclass 或持久化类型。
 
-每次成功的 Observer run 都更新 Root TLDR；只有 cadence 到期或 Compact 强制时，同一个输出才额外包含 Segment proposal forest。当前 Root 使用 active branch 上最近一次有效 TLDR；尚未成功运行 Observer 的 Session 可以暂时没有 TLDR。
+Pi `sessionName` 仍只是可选显示 metadata。Root 为 Segment 后，append-only Observer events 自然保留其历次 records；当前树取最后一个已验证版本，后续火焰图 Inspector 可以直接展示其 title、summary 和 children 如何变化。只有一个 Observation 时，跨 Session discovery 直接使用该 Observation 的内容预览。
 
-这样既保持 append-only 历史，也自然保留 TLDR 的版本序列。后续火焰图 Inspector 可以沿 Observer event 时间线展示 TLDR 如何变化。
+### 3.3 Observer 可以一次提交非平衡的多层树增量
 
-### 3.3 Observer 可以一次提交非平衡的多层树
+Observer 输出一棵递归嵌套的增量树：发生变化或新建的节点完整输出，未变化的已有节点只用 ID 引用。已有 Segment 的 proposal 携带其稳定 `id`，新 Segment 和新 Observation 不携带 ID，由代码按嵌套关系自底向上生成。模型因此可以在一次 run 中创建零到多个、任意深度的新 Segment，而不需要预先知道任何新 ID。
 
-Observer 的 Segment 阶段不可任意改写既有树，但一次 run 可以创建零到多个、任意深度的新 Segment。新 Segment 的 direct child 可以是运行开始时的 Root child，也可以是同一 event 中新建的 Segment。
+TreeStore 提供通用的 Segment 新版本应用能力；V1 的独立策略校验只允许模型更新当前 Root Segment，拒绝携带其他既有 Segment ID 的 proposal。该限制以后可以移除，不进入持久化格式或通用更新逻辑。
 
-整个 proposal forest 必须满足：
+递归树增量必须满足：
 
-1. 展开同轮新 Segment 后，leaf nodes 都来自运行开始时的 Root direct children；
-2. 每棵新 subtree 覆盖 Root 上一个连续 slice，并保持原顺序；
-3. 不同 top-level proposal subtrees 覆盖的 Root slices 不重叠；
-4. 每个节点最多一个 parent，不允许环或重复使用 child；
-5. 每个 Segment 至少有两个 direct children；
+1. 引用只能指向本轮开始时可见的已有节点；
+2. 新 Segment 的 `children` 是其完整 children；携带已有 ID 的 Segment proposal 中，`children` 是对该节点当前 children 的有序增量，未提及的旧 children 自动保留；
+3. 每个增量中引用的 existing leaves 必须是目标 Segment 当前 children 上保持原顺序的连续 slice；不同 replacements 不重叠，新 Observations 按 source ledger 顺序插入；
+4. 每个节点最多一个 parent，不允许环、重复 child 或共享子树；
+5. 每个 Segment 至少有两个 direct children，应用增量后 Root Segment 也仍至少有两个 direct children；
 6. Segment 与 Observation 可以混合作为 children，各分支深度不要求一致。
 
 例如一次 run 可以直接完成两层、非平衡归组：
 
 ```text
-root before: [A, B, C, D, E]
+root before: [A, B, C, D, E, F]
 
 S1 = Segment(A, B)
 S2 = Segment(D, E)
 P  = Segment(S1, C, S2)
 
-root after: [P]
+root after: [P, F]
 ```
 
-`P` 的三个分支剩余深度不同：`C` 是直接 Observation，`S1` 和 `S2` 下还有一层。它仍然是合法树，因为最终 leaf 顺序保持为 `[A, B, C, D, E]`。
+`P` 的三个分支剩余深度不同：`C` 是直接 Observation，`S1` 和 `S2` 下还有一层。它仍然是合法树，因为最终 leaf 顺序保持为 `[A, B, C, D, E, F]`，Root 也仍有两个 children。若没有 `F`，把全部 Root children 包成唯一 `P` 将因 Root 只剩一个 child 而被拒绝。
 
-该约束同时保证单父、无环、非 DAG 和时间顺序不变。TreeStore 对同一 event 的新节点按依赖关系验证，并将 proposal forest 的 top-level roots 原子替换到对应 Root slices。
+新 proposal 采用 best effort：代码先递归处理 children；合法的新 Segment 生成 ID 并保留，非法的新 Segment 被移除，其已经验证的 children 原位提升到父节点，同时立即 warning。更新已有 Segment 时，title、summary 和 children 分别验证；某一字段失败时保留该字段旧值，其余合法更新继续应用。最后仍须通过统一的整树验证，不能靠 best effort 修复单父、顺序、可达性或无环等最终 invariant。
 
-### 3.4 V1 采用不可变记忆
+### 3.4 通用 Segment 更新与 append-only records
 
-V1 假设 Observer 已接受的 Observation、Segment 和 TLDR 输出可直接使用。Observation 与 Segment 一经有效 custom entry 写入即不可修改、撤销、替换或重新生成；新的 proposal forest 只能以当前 Root children 为 leaves 继续向上包装，不能改写既有节点内部。
+Pi Session 和 custom entries 始终 append-only：已经写入的 event 不会被修改或删除。Observation 和 Segment 都是 active branch 上 records 重放后的当前投影；同一逻辑 ID 的较新合法 record 成为当前版本，旧版本继续保留在 Session 历史中。
 
-Root TLDR 的“更新”也不修改历史：每次成功的 Observer event 产生一个新的不可变快照，Root 只投影最近一次有效快照。
+V1 Observer、tools 和 commands 不提供 correction、supersede、tombstone 或 projection reset。Observer 当前只产生新 Observation、新 Segment 和 Root Segment 的同 ID 新版本，但 TreeStore 的更新能力不把这一 producer 限制固化；以后若允许更新其他 Segment，只需放宽独立策略校验。
 
-原始 Session entries 和 `sourceEntryIds` 只用于追溯生成依据，不引入自动正确性判断。V1 不实现 correction、supersede、tombstone、projection reset 或模型重跑纠错。若真实使用证明需要纠错，再基于明确的用户或外部证据，为 Observation 与 Segment 统一设计，而不是只给其中一种节点增加可变语义。
+节点 ID 是跨版本稳定的逻辑身份，不是当前内容的永久校验值。新 Observation 和新 Segment 的 ID 由代码生成，后续版本复用原 ID；成为 Root 不改变节点 ID，也不另建 summary 身份或快照类型。模型输出在写入前已经完成归一化和验证；若重放时发现本插件持久化的 event 结构错误或最终树不合法，直接报告重建错误并停止发布该树，不为文件损坏或实现 bug 设计静默跳过、猜测修复或局部降级。
 
 ---
 
 ## 4. 数据模型
 
-### 4.1 Observation：保留当前生成机制
+### 4.1 Observation
 
 ```ts
 type Observation = {
-  id: string;                 // 现有 12 位小写 hex content hash
+  id: string;                 // 代码生成的稳定逻辑 ID
   content: string;
-  timestamp: string;          // YYYY-MM-DD HH:MM
-  relevance: "low" | "medium" | "high" | "critical";
   sourceEntryIds: string[];
-  tokenCount: number;
 };
 ```
 
-Observation 的内容规则、ID、relevance 和 source provenance 保持不变，但与 Segment/TLDR 一起写入统一 Observer event；不再单独启动或持久化一个 Observer Agent 结果。
+Observation 只表达对一组明确 source entries 的语义压缩。V3 的单点 `timestamp` 和 Dropper 使用的 `relevance` 在区间树中没有消费者，因此不进入 V4；时间范围和顺序从 `sourceEntryIds` 在 Session ledger 中的位置推导。渲染 token 成本也由统一 renderer 按需估算，不持久化 `tokenCount`。
 
 ### 4.2 Segment
 
@@ -191,46 +189,43 @@ type NodeId = string; // Observation: 12 hex；Segment: s_<12 hex>
 type Segment = {
   id: SegmentId;
   title: string;       // 单行、简短、面向导航
-  summary: string;     // 单段纯文本，描述该历史阶段做过的工作及结果/决定/未决项
-  childIds: NodeId[];  // 有序，至少 2 个
-  tokenCount: number;  // Segment 渲染行的本地估算，仅用于非膨胀校验和本地诊断
+  summary: string;     // 单段纯文本，描述该节点覆盖的历史
+  childIds: NodeId[];  // 有序且无固定上限；每个 Segment 始终至少 2 个
 };
 ```
 
 不在 Segment 中重复保存：
 
-- parent ID：由 fold 时谁引用它推导；
-- 时间区间：从 descendant Observations 推导；
+- parent ID：由重放时谁引用它推导；
+- 时间区间：从 descendant Observations 的 source entries 推导；
 - source entry IDs：沿 children → Observation → sourceEntryIds 推导；
+- tokenCount：由统一 renderer 使用当前格式动态估算；
 - leaf count、深度：从树推导；
 - Session ID：由所属 Pi Session 决定。
 
-Segment ID 使用 `s_` 命名空间，避免和现有 Observation 的 12 位 ID 发生结构歧义。Hash 输入至少包括规范化后的 `title + summary + ordered childIds`。
+Segment ID 使用 `s_` 命名空间，避免和现有 Observation 的 12 位 ID 发生结构歧义。所有新 Segment 都使用同一代码生成逻辑；ID 随后作为稳定逻辑身份，合法的新版本复用原 ID。成为 Root 不改变这套规则；重建后唯一没有 parent 的 `Observation | Segment` 就是 `MemoryTree.root`。
 
 ### 4.3 Observer 持久化事件
+
+模型的递归树增量先由代码归一化成普通 records，再追加一个不可变 event：
 
 ```ts
 customType: "om.observations.recorded"
 data: {
   version: 1;
-  observations: Observation[];
+  nodeRecords: Array<Observation | Segment>;
   coversUpToId?: string;
-  segmentationOutcome: "not_requested" | "accepted" | "rejected";
-  segments: Segment[];
-  segmentWarning?: string;
-  rootTldr: string;
+  segmentCheck: "not_requested" | "complete" | "partial";
+  warnings?: string[];
 }
 ```
 
-一次模型输出只追加一个不可变 event：
+- `nodeRecords` 只包含本轮验证后真正创建或更新的节点；新节点和更新后的 Root Segment 都使用同一 record 规则；
+- 本轮产生非空 Observations 时，`coversUpToId` 沿用 V3 coverage 语义；模型成功但未产生 Observation 时不写 coverage、不推进 cadence；
+- `segmentCheck` 区分未要求归组、全部 proposal 处理完成和部分 proposal 因校验失败被移除；`partial` 保持 Segment due；
+- `warnings` 保存本轮局部失败原因，并同时向用户显示；非法 proposal 本身不进入 ledger。
 
-- `observations` 保存本轮从 raw source 提取的新叶子；非空时 `coversUpToId` 沿用现有 Observation coverage 语义；
-- `segmentationOutcome` 区分未要求 Segment、合法完成（可以没有可封闭区间）和模型生成非法 forest；
-- `segments` 只保存通过验证的 Segment；非法 forest 不进入 ledger；
-- `segmentWarning` 在 rejected 时保存简短拒绝原因，供即时 warning、status 和 prompt/tool 调优；
-- `rootTldr` 每次成功 run 都更新。
-
-同一 event 同时包含新 Observations 和 Segments 时，fold 先把 Observations 追加到 Root，再原子应用 proposal forest，因此 Segment 可以直接包含本轮新生成的 Observation。
+同一 event 中的新节点按依赖关系自底向上生成 ID 并展平成 records。Root 已是 Segment 时，代码使用模型给出的同 ID proposal 构造其完整新版本；第一次形成 Segment Root 时生成普通 Segment ID。未执行 Segment check 且没有新 Observation 的 successful empty run 与 V3 一样不追加 event；执行过 Segment check 时即使没有节点变化也写 event，以便从 ledger 推导 cadence。
 
 ### 4.4 Compaction details
 
@@ -239,11 +234,11 @@ type SegmentMemoryDetails = {
   type: "om.segment-tree.rendered";
   version: 1;
   memoryDepth: number;
-  frontierNodeIds: NodeId[];
+  renderedNodeIds: NodeId[]; // 按 preorder 实际显示的全部 Segment 和 Observation
 };
 ```
 
-`frontierNodeIds` 是本次 Compact 实际渲染出的有序节点，可用于 `/om:view visible` 和可见/当前差异诊断。Root TLDR 已由 Compact 前的 Observer event 持久化，不在 compaction details 中复制。
+`renderedNodeIds` 是本次 Compact 按 preorder 实际显示的全部节点：每个被访问到的 Segment 先记录自身，再在深度允许时记录其 descendants；Observation 直接记录。它可用于 `/om:view visible` 和可见/当前差异诊断。Root 为 Segment 时已由 Observer event 持久化；Root 为单个 Observation 时直接引用该 Observation record，均不在 compaction details 中复制。
 
 ### 4.5 Session 身份
 
@@ -262,7 +257,7 @@ type SessionIdentity = {
 原则：
 
 - identity = Session ID；
-- Session TLDR = 跨 Session discovery 的主要内容描述；
+- Root 为 Segment 时以其 summary 作为跨 Session discovery 的主要内容描述；Root 为单个 Observation 时使用该 Observation 的内容预览；
 - display label = 可选的 Session name，缺失时可显示文件时间；
 - relation = Pi header 的 `parentSession` 或外部 Sub-agent 系统明确提供的关系；
 - 不根据名称、cwd 或启动时间猜 parent/child。
@@ -271,77 +266,73 @@ type SessionIdentity = {
 
 ---
 
-## 5. 树的权威 fold 逻辑
+## 5. 树的权威重放与验证
 
-`MemoryTreeStore` 是 Segment 结构规则的唯一权威。Renderer、Compact、工具和状态命令都只能消费它的结果，不能各自解释 custom entries。
+`MemoryTreeStore` 是节点更新、结构规则和重建的唯一权威。Renderer、Compact、工具和状态命令只消费它发布的节点对象，不能各自解释 custom entries 或重复判断 Root kind。
 
-### 5.1 Fold 输入
+### 5.1 重放输入
 
 当前 active branch 上的 entries：
 
 - `om.observations.recorded`
 - 其他 entry 仅用于 source 索引和 Session 信息
 
-### 5.2 Fold 状态
+没有 Observation 时尚无 MemoryTree，工具返回“尚无记忆”。第一个 Observation 自身成为 Root；第二个 Observation 出现时才创建至少有两个 children 的普通 Segment 作为新 Root。Root 成为 Segment 后，后续 event 可以提交它的同 ID 新版本。
+
+### 5.2 当前状态与节点行为
 
 ```ts
+type Node = Observation | Segment;
+
 type MemoryTree = {
   observationsById: Map<string, Observation>;
   segmentsById: Map<SegmentId, Segment>;
-  rootChildren: NodeId[];
+  root?: Node; // 0 Observation 时缺失；1 个时为 Observation；此后为 Segment
   parentByChildId: Map<NodeId, SegmentId>;
-  rootTldr?: string;
-  rootTldrHistory: RootTldrSnapshot[];
   observationBatchesSinceSegmentation: number;
   diagnostics: TreeDiagnostic[];
 };
 ```
 
-### 5.3 Reducer 规则
+MemoryTreeStore 把 records 恢复成统一节点对象；节点自身提供 render、children、preview 和 export projection。Observation 的 `children()` 为空，Segment 的 `children()` 按 `childIds` 解析。Root 只提供首次遍历的节点，不引入 Root class，也不让 Compact、ls、read、export 分别实现 Observation/Segment 分支。
+
+### 5.3 Event 重放规则
 
 每个 Observer event 按固定顺序处理：
 
-1. 使用 first-valid-record-wins 加入新 Observations，并按首次记录顺序追加到 Root；
-2. `accepted` 时验证并应用本轮 proposal forest；`rejected` event 不含非法 Segment，只记录 warning；
-3. 更新 Root TLDR snapshot；
-4. 有非空 Observations 且本轮 `not_requested` 时，Observer batch 计数加一；`accepted` 时归零；`rejected` 时保持 Segment due，下一次 Observer 继续尝试。
+1. 校验 event envelope 和全部 `nodeRecords`；任何由本插件写出的 malformed record 都使该 Session 的 MemoryTree 重建明确失败，不静默忽略或修复；
+2. 在候选副本中按 record 顺序应用节点版本：新 ID 创建节点，既有 ID 更新对应节点，节点第一次出现的位置决定其历史顺序；
+3. 从候选 parent relations 推导唯一 Root，并执行完整树验证；通过后才发布候选状态；
+4. event 含新 Observations 且 `segmentCheck=not_requested` 时 batch 计数加一；`complete` 时归零；`partial` 时保持 Segment due；无 Observation 的成功结果与模型/API failure 都不推进 coverage 或普通 batch 计数。
 
-#### Proposal forest
+Root 生命周期仍由同一候选树自然产生：一个 Observation 时它就是 Root；第二个出现时必须有一个新 Segment 覆盖已有和新增 Observations；Root 已是 Segment 时，其更新 record 复用原 ID。旧 records 保留在 append-only Session 中，后续 Inspector 可展示 Root title、summary 和 childIds 的版本变化。
 
-把 event 的 `segments` 视为一个 proposal forest，整体校验：
+### 5.4 重建后的整树验证
 
-1. 新 ID 格式合法、event 内唯一且未存在；
-2. title/summary 非空、单行/单段；
-3. 每个 Segment 至少两个不重复的 direct children；
-4. child 可以是当前 Root node 或同 event 的新 Segment；
-5. 新节点依赖图无环，每个 existing/new child 最多一个 parent；
-6. 递归展开后，每棵 top-level subtree 的 leaves 都是当前 Root 上保持原顺序的连续 slice；不同 top-level slices 不重叠；
-7. 每个 Segment 的渲染 token 数严格小于其 direct children 的渲染 token 总数，该规则按依赖关系自底向上验证。
+每次 `session_start`、`session_tree`、Compact 前重建或跨 Session 读取完成后，`MemoryTreeStore` 都必须在发布 cache 前运行同一个全树验证器：
 
-整个 forest 通过后，将其 top-level roots 原子替换到对应 Root slices，并记录 parent map。malformed event 整体忽略并写 diagnostic；已有效的树不受影响。
+1. 零 Observation 时不得有 Root 或 Segment；一个 Observation 时它必须是唯一无 parent 节点且不得有 Segment；至少两个 Observations 时必须恰有一个没有 parent 的 Segment，`tree.root` 必须引用它；
+2. 为每个 child 统计入度，任何节点出现第二个 parent 立即失败，禁止共享子树和 DAG；
+3. 使用 visiting/visited 状态检测 cycle；
+4. 每个当前 Observation/Segment 必须从 Root 恰好可达一次，不允许悬空节点；
+5. 每个 `childId` 必须存在，Observation 不能拥有 children；
+6. DFS 得到的 Observation leaf 顺序必须与 source entries 的 ledger 顺序一致；相同 source 区间内保留模型输出的稳定顺序；
+7. 每个 Segment 都必须至少有两个 children并满足直接 children 非膨胀约束；所有 Segment summary 使用同一长度和格式校验。
 
-#### Root TLDR snapshot
+最终验证失败时不得把结构交给 Renderer、Compact 或 memory tools：当前 Session 的 Compact 取消并 warning，读取工具返回明确错误，同时保留原始 Session entries；不得静默删边把图“修”成树。
 
-- 按 active branch 上的有效 Observer events 保留 TLDR 时间线。
-- 最近一次非空有效 TLDR 是当前 Root summary。
-- 新快照不修改旧快照；Observer 失败时没有新 event，继续使用上一版。
-
-### 5.4 核心 invariant
+### 5.5 核心 invariant
 
 必须始终成立：
 
-1. 每个 Observation/Segment 最多有一个 parent。
-2. Root children 没有 parent。
-3. 每个非 Root 节点都能沿 parent 到达 Root。
-4. children 顺序与 Observation 首次记录顺序一致。
-5. Segment 至少有两个 children。
-6. Segment 的渲染成本小于直接 children 的渲染成本。
-7. 树允许非平衡结构；同一 Segment 下可以同时存在 Segment 和 Observation，child subtrees 深度可以不同。
-8. 任何 malformed/unknown entry 都只能被忽略，不能使整个 Session 无法读取。
+1. 零 Observation 时没有 Root；一个 Observation 时它就是 Root；至少两个 Observations 时 Root 必须是 Segment。Root 是唯一没有 parent 的当前节点，其他节点恰好有一个 parent。
+2. 每个非 Root 节点都能沿 parent 到达 Root。
+3. children 顺序与 descendant Observations 的 source ledger 顺序一致；节点更新不得改变历史顺序。
+4. 每个 Segment 都至少有两个 direct children。
+5. 每个 Segment 的当前渲染成本严格小于直接 children 的当前渲染成本；所有 Segment summary 使用同一长度和格式规则。
+6. 树允许非平衡结构；同一 Segment 下可以同时存在 Segment 和 Observation，child subtrees 深度可以不同。
 
-第 6 条给出首版不需要 memory token planner 的安全依据：
-
-> 平铺全部 Observations 是表示大小上界；每次用 Segment 替换 children 都是严格非膨胀操作，因此任意固定深度 frontier 不会比平铺 Observation baseline 更大。
+第 5 条由统一 renderer 动态估算，不依赖持久化 tokenCount。它只保证某个 Segment 停止展开时比显示下一层 children 更短；完整分层渲染会同时保留祖先与 descendants，因此不建立相对平铺 Observations 的全局大小上界。
 
 ---
 
@@ -349,12 +340,13 @@ type MemoryTree = {
 
 ### 6.1 职责
 
-Observer 仍负责把新的 raw conversation 提取为 source-backed Observations，但一次模型输出还会：
+Observer 仍负责把新的 raw conversation 提取为 source-backed Observations，但一次模型输出直接给出递归树增量：
 
-- 每次更新整个 Session 的极短 Root TLDR；
-- cadence 到期或 Compact 强制时，把当前 Root（包括本轮新 Observations）组织成 Segment proposal forest。
+- 新 Observation 以内联叶子出现；
+- cadence 到期或 Compact 强制时，可以内联任意深度的新 Segment；
+- Root 已是 Segment 时，以携带现有 ID 的普通 Segment proposal 更新其 title、summary 和 children。
 
-Segment 是 Observer 的周期性归组能力，不是第二个 Agent 或第二次模型调用。执行 Segment 时，它只总结已经发生的历史，不预测下一阶段、不删除 Observation、不调整 Compact depth，也不改写既有 Segment。
+Segment grouping 是 Observer 的周期性能力，不是第二个 Agent 或第二次模型调用。V1 只总结已经发生的历史，不预测下一阶段、不删除 Observation、不调整 Compact depth；通用 schema 能表示任意既有 Segment 的新版本，但当前策略校验只允许更新 Root Segment。
 
 ### 6.2 输入
 
@@ -362,10 +354,10 @@ Segment 是 Observer 的周期性归组能力，不是第二个 Agent 或第二�
 
 - 后台 Observer：上次 coverage 后、受 `observerChunkMaxTokens` 限制的新 raw source chunk；
 - Compact-forced Observer：获得串行执行权后读取最新 branch，将全部尚未 Observation 化的相关 raw source 放入本次输入，不使用后台 chunk cap；该集合可以为空；
-- 当前 Root frontier，其中 Observation 提供时间、relevance 和 content，Segment 提供 title、summary、时间范围和 leaf count；
+- 当前顶层状态：无 Root、单 Observation Root，或 Root Segment 及其有序 direct children；Observation 提供 ID、content 和 source range，Segment 提供 ID、title、summary、source range 和 leaf count；
 - 当前成功 Observation batch 计数，以及本轮是否必须执行 Segment。
 
-Observer 只需要看 Root frontier，不默认展开已有 Segment 的内部 subtree。
+Root 为 Segment 时，Observer 默认只看其 record 和 direct children；未变化的 existing nodes 在输出中使用 `ref`，不重复输出其内容。Root 为单 Observation 时直接查看该 Observation。
 
 ### 6.3 触发与 cadence
 
@@ -373,34 +365,89 @@ Observer 只需要看 Root frontier，不默认展开已有 Segment 的内部 su
 turn_end / agent_start
   → 新 raw source 达到 observeAfterTokens
   → 运行一次 Observer
-  → 总是输出 Observations + Root TLDR
-  → 若本轮成功非空 batch 使计数达到 segmentEveryObserverRuns，则同时输出 Segment forest
+  → 输出递归树增量
+  → 若本轮成功非空 batch 使计数达到 segmentEveryObserverRuns，则允许在增量中创建多层 Segment
 
 session_before_compact
   → 强制运行一次 Observer
   → flush 尚未 Observation 化的 raw source
-  → 无视 batch 计数，必须执行 Segment 并更新 Root TLDR
+  → 无视 batch 计数执行 Segment；Root 已是 Segment 时输出其新版本
 ```
 
-计数单位是成功且非空的 Observer batch，不是单条 Observation，也不是 tokens。empty/failure 不计数；成功执行 Segment 后计数归零，即使最终没有创建 Segment。计数由 active branch 上的 Observer events 推导，不维护独立可变 counter。
+计数单位是成功且非空的 Observer batch，不是单条 Observation，也不是 tokens。与 V3 一致，模型成功但没有产生 Observation 时不推进 coverage 或普通 batch 计数；模型/API failure 同样不推进。`segmentCheck=complete` 时归零，即使最终没有创建 Segment；`partial` 保持 due。计数由 active branch 上的 Observer events 推导，不维护独立可变 counter。
 
 ### 6.4 单次模型输出
 
-Observer 通过一次结构化 `record_observations` 调用返回：
+Observer 通过一次结构化工具调用返回一棵递归增量树：
 
 ```ts
+type ObserverOutput = {
+  tree: NodeProposal | null;
+};
+
+type NodeProposal =
+  | { type: "ref"; id: NodeId }
+  | {
+      type: "observation";
+      content: string;
+      sourceEntryIds: string[];
+    }
+  | {
+      type: "segment";
+      id?: SegmentId;
+      title: string;
+      summary: string;
+      children: NodeProposal[];
+    };
+```
+
+语义只有三条：
+
+1. `ref` 引用未变化的已有节点；
+2. 新 Observation 和新 Segment 不带 ID，代码为其生成永久 ID；
+3. Segment 携带 `id` 表示该逻辑节点的新版本；V1 只允许该 ID 等于当前 Segment Root 的 ID。
+
+`tree` 是以当前 Root 为入口的递归增量，不是完整树快照或操作列表。新 Segment 的 `children` 完整描述该新节点；带现有 ID 的 Segment proposal 则把 `children` 解释为对该节点现有 children 的有序增量，未出现的旧 children 自动保留。单独出现的 `ref` 可以作为顺序锚点，不要求模型重抄全部未变化节点。嵌套关系直接表达同轮新 Segment 的父子关系，代码按 children 依赖自底向上生成 ID，因此模型不需要临时 ID、`targetId` 或 `observationIndex`。例如已有 Root Segment 更新、创建两层新 Segment并留下一个未归组 Observation，可以同时表示为：
+
+```json
 {
-  observations: ObservationProposal[];
-  rootTldr: string;
-  segments?: SegmentProposal[];
+  "tree": {
+    "type": "segment",
+    "id": "s_111111111111",
+    "title": "Segment Memory architecture",
+    "summary": "Refined the memory-tree architecture and Observer contract.",
+    "children": [
+      { "type": "ref", "id": "aaaaaaaaaaaa" },
+      {
+        "type": "segment",
+        "title": "Observer redesign",
+        "summary": "Unified source-backed observations and nested segment creation.",
+        "children": [
+          { "type": "ref", "id": "s_bbbbbbbbbbbb" },
+          {
+            "type": "segment",
+            "title": "Output contract",
+            "summary": "New nodes are nested and receive IDs from code.",
+            "children": [
+              { "type": "observation", "content": "New Segment IDs are generated by code.", "sourceEntryIds": ["e001"] },
+              { "type": "observation", "content": "Observer output is a recursive tree increment.", "sourceEntryIds": ["e002"] }
+            ]
+          }
+        ]
+      },
+      { "type": "observation", "content": "The latest work remains ungrouped.", "sourceEntryIds": ["e003"] }
+    ]
+  }
 }
 ```
 
-非 Segment 轮次省略 `segments`。Segment 轮次用嵌套 proposal 表达零到多个、多层非平衡 forest；它可以引用当前 Root nodes 和本轮 Observation proposals。代码生成 Observation IDs 后再自底向上生成 Segment IDs，验证整个 forest，并追加一个不可变 Observer event。该工具调用结束本轮，不再为了 Segment 发起第二次模型请求。
+顶层现有 `id` 就是该 Root Segment 的逻辑身份，不另设 `targetId`；所有内联新节点都没有 ID。示例中的独立 `ref` 只是可选顺序锚点，即使省略，对应旧 child 也会保留。没有 Observation 时 `tree` 可以是 `null`；一个新 Observation 可以直接成为 Root；第二个 Observation 出现时，模型输出一个不带 ID、至少有两个 children 的 Segment；已有 Segment Root 的 proposal 复用其 ID。
 
-### 6.5 历史区间的封闭判据
+代码递归归一化 proposal、生成 records、运行整树验证，再追加一个 `om.observations.recorded` event。该工具调用结束本轮，不再为了 Segment 发起第二次模型请求。
 
-生成 Segment 不要求任务成功完成，只要求 children 描述的是已经发生、现在可以准确总结的一段工作：
+### 6.5 普通 Segment 历史区间的封闭判据
+
+生成普通 Segment 不要求任务成功完成，只要求 children 描述的是已经发生、现在可以准确总结的一段工作。Root 覆盖持续发展的整个 Session，不使用这组封闭判据：
 
 - 阶段有明确目标、主题或行动脉络；
 - 摘要能说明做过什么、当前结果或状态、关键决定/理由和仍然有效的 blocker；
@@ -418,16 +465,19 @@ Root 最右侧仍在发展的近期 Observations 可以暂时保持平铺；后�
 - 摘要声称 children 中尚未发生的结果；
 - 用“接下来将……”代替对已有工作的总结。
 
-### 6.6 失败语义
+### 6.6 Best-effort 归一化与失败语义
 
-- 后台 Observer 模型/API 失败：不写 event、不推进 coverage 或 batch 计数，下次正常触发再试。
-- Segment proposal 非法：不持久化非法 Segment；保留有效 Observations 和 Root TLDR，写入 rejected outcome，并向用户 warning 具体拒绝原因；保持 Segment due。
-- Compact 中仅 Segment proposal 非法：继续使用有效 Observations 和平铺树渲染，同时 warning；不把它升级为整个 Observer 失败。
-- Compact-forced Observer 整体失败：取消本次 Compact 并 warning，不写 event，也不使用旧树或 Pi native compaction 删除尚未 Observation 化的 raw history。
-- Compact-forced Observer 成功、Root TLDR 已更新，但整棵树仍无任何 Observation/Segment：保留 TLDR event，插件不接管本次 Compact，回退 Pi native compaction；空树意味着对话没有值得记录的 Observation，或 Observer 行为异常，极短 TLDR 不足以独自替代完整 compaction summary。
-- append 前 Session ID 或 active-branch generation 已变化：放弃整个结果，禁止写入错误 branch。
+代码递归处理模型 proposal：
 
-树退化到平铺 Observation 仍然是正确、可用状态。V1 不为 Session 末尾最后一次失败持久化额外重试状态；若 Session 不再继续，少量平铺尾部无关紧要。
+- 新 Observation 的 content 或 source IDs 非法：移除该叶子并 warning；
+- 新 Segment 非法：移除该 Segment，将已经验证的 children 原位提升到父节点并 warning；
+- 更新已有 Segment 时某个 title、summary 或 children 变更非法：该部分保留旧值，其他合法部分继续，并 warning；
+- 归一化后的候选树仍违反顺序、单父、可达、无环或最少 children 等最终 invariant：拒绝结构更新；同轮合法新 Observations 尽可能作为未分组 Root children 保留并 warning；
+- 第一次创建 Segment Root 时没有旧字段可沿用；若归一化后无法形成合法 Root，整轮不提交、coverage 不推进，原始 Session 留待下次重试。
+
+后台 Observer 模型/API 整体失败时不写 event、不推进 coverage 或 batch 计数。Compact 中只有局部 proposal 失败时仍可提交合法结果并继续渲染；Compact-forced Observer 整体失败则取消本次 Compact 并 warning，不使用旧树或 Pi native compaction 删除尚未 Observation 化的 raw history。forced Observer 成功但仍没有任何 Observation 时，插件返回空让 Pi native compaction 处理。append 前 Session ID 或 active-branch generation 已变化时放弃整个结果，禁止写入错误 branch。
+
+V1 不为 Session 末尾最后一次局部失败持久化额外重试状态；`partial` event 自身使 Segment cadence 保持 due。
 
 ---
 
@@ -438,7 +488,7 @@ Root 最右侧仍在发展的近期 Observations 可以暂时保持平铺；后�
 ```mermaid
 stateDiagram-v2
     [*] --> Loading: session_start
-    Loading --> Idle: fold active branch
+    Loading --> Idle: rebuild + validate active branch
     Idle --> Observing: token due / compact flush
     Observing --> Idle: event appended / empty / failure
     Idle --> Rebuilding: session_tree or branch changed
@@ -452,12 +502,12 @@ stateDiagram-v2
 
 - 读取 config；
 - 捕获 Session ID 和 active-branch generation；
-- fold 当前 active branch；
+- 重放当前 active branch 并重建 MemoryTree；
 - 创建本 Session/branch 的 `AbortController`。
 
 `session_tree`：
 
-- active branch 变化时递增 generation、abort 当前 Observer，并从新 branch 重建 tree cache。
+- active branch 变化时递增 generation、abort 当前 Observer，并从新 branch 重建、全树验证后发布 tree cache。
 
 `session_shutdown`：
 
@@ -473,7 +523,9 @@ stateDiagram-v2
 Idle → Observer → Idle
 ```
 
-后台 token trigger 与 Compact flush 经过同一个串行队列，不并行运行两个 Observer。Compact 若遇到正在运行的后台 Observer，其 forced Observer 请求排在后面；取得单写执行权后重新读取最新 branch、重新 fold，并运行一轮新的 forced Observer。旧 Observer 的结果可以先正常提交，但绝不复用为本次 Compact 的 forced run。
+后台 token trigger 与 Compact flush 调用同一个 Observer 接口并经过同一个串行队列，不并行运行两个 Observer。Compact 若遇到正在运行的后台 Observer，其 forced 请求排在后面；取得执行权后重新读取最新 branch、重建当前树，并运行一轮新的 forced Observer。旧 Observer 的结果可以先正常提交，但绝不复用为本次 Compact 的 forced run。
+
+同一 Runtime 同时只允许一个 Compact hook 执行；第一次尚未结束时到达的 duplicate Compact 直接取消并 warning，不再排队第二个 forced Observer。第一次结束后是否仍需 Compact 由 Pi 正常判断。
 
 ### 7.3 提交前复验
 
@@ -482,8 +534,8 @@ Idle → Observer → Idle
 1. 检查 AbortSignal；
 2. 检查 Session ID 和 active-branch generation 未变；
 3. 重新读取当前 branch；
-4. 重新 fold Root frontier；
-5. 重新验证本轮 Observations 的 source entries 仍属于该 branch，proposal forest 仍基于当前 Root frontier。
+4. 重建 Root 及其 direct children；
+5. 重新验证本轮新 Observations 的 source entries 仍属于该 branch，递归树增量引用的 existing nodes 仍属于当前树。
 
 这使模型调用期间新增普通 conversation entries 不会破坏提交；若发生 branch/session replacement，则安全放弃。
 
@@ -503,35 +555,38 @@ Idle → Observer → Idle
 }
 ```
 
-定义：
+定义只有一条递归规则：
 
-- Root depth = 0；
-- Root child depth = 1；
-- Observation 被访问到时直接进入 frontier；
-- Segment depth `< memoryDepth` 时继续访问 children；
-- Segment depth `>= memoryDepth` 时停止并进入 frontier。
+- 访问 Observation 时，显示该 Observation；
+- 访问 Segment 时，先显示该 Segment；若其 depth `< memoryDepth`，再按顺序递归访问全部 children；否则停止展开。
+
+Root 只是首次调用该规则时 depth 为 0 的节点，不另加、不隐藏，也不替换其他节点；Observation Root 直接显示，Segment Root 按同一 Segment 规则递归。因此：
+
+- `memoryDepth = 0`：只显示 Root；
+- `memoryDepth = 1`：显示 Root 及其全部 direct children；
+- `memoryDepth = 2`：保留上述全部节点，并继续显示 depth 1 Segment 的全部 children；
+- 已展开 Segment 的 title/summary 始终保留。
 
 伪代码：
 
 ```ts
-function frontier(node, depth, memoryDepth): Node[] {
+function renderedNodes(node, depth, memoryDepth): Node[] {
   if (node.kind === "observation") return [node];
   if (depth >= memoryDepth) return [node];
-  return node.children.flatMap(child => frontier(child, depth + 1, memoryDepth));
+  return [
+    node,
+    ...node.children.flatMap(child => renderedNodes(child, depth + 1, memoryDepth)),
+  ];
 }
 ```
 
-默认 `memoryDepth = 2`：
-
-- 老历史通常命中二级 Segment summary；
-- 中近期一级 Segment 会展开；
-- 尚未进入 Segment 的 Root Observations 保持原文。
+默认 `memoryDepth = 2` 时，Root 为 Segment 则显示其 summary、一级 Segment/Observation，以及一级 Segment 展开的二级节点；Root 为单 Observation 时只显示该 Observation。
 
 ### 8.2 记忆树与 Pi raw tail 相互独立
 
 Compact 始终从 Root 开始，仅按 `memoryDepth` 渲染完整记忆树。Observation 是否进入 summary，只取决于它在树中的位置和深度，不取决于其 source entries 是否仍在 Pi raw tail 中。
 
-`firstKeptEntryId` 只控制 Pi 保留哪些原始 Session entries；它不参与 Segment Tree 的筛选、展开或去重。memory summary 与 raw tail 出现内容重叠是允许的，也不需要 before/after/mixed boundary 分类或 prefix projector。
+`firstKeptEntryId` 只控制 Pi 保留哪些原始 Session entries；插件与 V3 一样直接返回 `event.preparation.firstKeptEntryId`，不自行计算 raw-tail boundary。它不参与 Segment Tree 的筛选、展开或去重。memory summary 与 raw tail 出现内容重叠是允许的，也不需要 before/after/mixed boundary 分类或 prefix projector。
 
 ### 8.3 Hook 路径
 
@@ -539,54 +594,48 @@ Compact 始终从 Root 开始，仅按 `memoryDepth` 渲染完整记忆树。Obs
 flowchart LR
     A[session_before_compact] --> B[forced Observer 进入串行队列]
     B --> C[读取最新 branch 与全部 pending raw]
-    C --> D[一次调用生成 Observations + Segment + TLDR]
+    C --> D[一次调用生成递归树增量]
     D --> E{Observer success?}
     E -- no --> F[cancel Compact + warning]
-    E -- yes --> G[重新 fold 已提交 tree]
-    G --> H[按 memoryDepth 取 frontier]
-    H --> I{frontier empty?}
-    I -- yes --> J[return undefined: Pi native compaction]
-    I -- no --> K[确定性 render]
+    E -- yes --> G[重建已提交 tree]
+    G --> H{存在 Observation Root 或 leaves?}
+    H -- no --> I[return undefined: Pi native compaction]
+    H -- yes --> J[从 Root 按 memoryDepth 递归显示全部访问节点]
+    J --> K[确定性 render]
     K --> L[返回 summary + firstKeptEntryId + details]
 ```
 
-Compact 不自动修改 `memoryDepth` 或做 token optimization。forced Observer 是唯一模型调用：它不使用后台 `observerChunkMaxTokens`，而是在获得串行执行权后一次处理全部 pending raw source、执行 Segment 并更新 Root TLDR。调用失败时取消本次 Compact 并 warning；不回退 Pi native compaction，也不拿旧树继续删除 raw history。
+Compact 不自动修改 `memoryDepth` 或做 token optimization。forced Observer 是唯一模型调用：它不使用后台 `observerChunkMaxTokens`，而是在获得串行执行权后一次处理全部 pending raw source、执行 Segment，并在 Root 已是 Segment 时更新它。调用失败时取消本次 Compact 并 warning；不回退 Pi native compaction，也不拿旧树继续删除 raw history。
 
 ### 8.4 Summary 格式
 
-Compact memory 仍使用扁平 representation frontier，不显示被展开但未进入 frontier 的中间 Segment。Root TLDR 只用于跨 Session discovery，不进入下面的 Session 内 memory summary。若整棵树为空，极短 TLDR 不足以替代完整 summary，插件回退 Pi native compaction：
+Compact memory 从当前 Root 按树的 preorder 输出：每个访问到的 Segment 行先于其 children，已展开的中间 Segment 也完整保留；每个访问到的 Observation 同样输出。`memoryDepth=0` 时只有 Root，更深配置只继续递归，不删除已经显示的祖先。Root 为 Segment 时，跨 Session discovery 读取其 summary；Root 为单 Observation 时读取该 Observation 的内容预览。若 forced Observer 后仍未产生任何 Observation，插件回退 Pi native compaction：
 
 ```md
 These are condensed memories from earlier in this session.
 
-- Segment entries are completed historical phases. Use memory_read to expand them.
-- Observation entries are source-backed events. Use memory_read to inspect provenance.
+- Segment entries summarize historical ranges; a Segment Root summarizes the whole session. Every displayed Segment remains visible when expanded.
+- Observation entries are source-backed events; a singleton Observation may itself be the Root. Use memory_read to inspect provenance.
 - Newer records supersede conflicting older records.
 
 ## Memory
 [s_a1b2c3d4e5f6] Fix npm extension peer resolution — Root cause was the temporary npm peer boundary; the final patch reused host VIRTUAL_MODULES, corrected Loaded reconciliation, passed validation, and opened PR #405.
-[47d4aa7245bb] 2026-08-22 09:07 [medium] agentic-review has an unresolved scalability risk...
+[47d4aa7245bb] agentic-review has an unresolved scalability risk...
 ```
 
-Segment 行必须同时含 ID、title、summary；Observation 行沿用当前格式。
+Segment 行必须同时含 ID、title、summary；Observation 行只含 ID 和 content。当前 Root 无论是哪种节点都按自身格式排在第一行。
 
-### 8.5 为什么首版不需要 token fallback
+### 8.5 为什么首版不需要 token planner
 
-只要每个 Segment 满足：
+每个 Segment 仍须满足：
 
 ```text
 render(segment) < Σ render(direct children)
 ```
 
-树渲染就是对平铺 Observation baseline 的一系列非膨胀替换。用户已经有“全部 Observations 平铺也可正常工作”的真实使用证据，因此首版只在本地状态中显示渲染 token 估算，不添加动态降深或 hard-cap 行为。
+这保证 Segment 在停止展开时确实比其 subtree 的下一层表示更短，但不再宣称完整分层渲染小于平铺 Observations：因为每个已展开祖先也会显示，较大的 `memoryDepth` 可以产生更多内容。
 
-若真实数据反驳该判断，第一排查对象是：
-
-- Observer 的 Segment 阶段是否长期不产出；
-- Segment summary 是否未实际压缩；
-- 大量旧节点是否仍停留在 Root；
-
-而不是先引入新的 planner。
+V1 仍不增加动态 token planner。`memoryDepth` 是用户明确选择的展示深度，status 显示各深度的本地 token 估算；若真实 Session 证明默认深度过大，再依据数据调整默认值或设计 hard cap，而不是预先引入优化器。
 
 ---
 
@@ -609,12 +658,12 @@ render(segment) < Σ render(direct children)
 输出每项：
 
 - exact Session ID；
-- 最新 Root TLDR（若该 Session 已成功生成）；
+- Root 为 Segment 时返回其 title/summary；Root 为单 Observation 时返回该 Observation 的内容预览；
 - 可选 `sessionName` 和 cwd；
 - Session 文件时间范围；
 - parentSession（若 Pi header 提供）；
 - Observation/Segment 数；
-- Root frontier 数和最大深度；
+- Root kind、Root 为 Segment 时的 child 数，以及最大深度；
 - 顶层最多 3 个 Segment/Observation 的短预览。
 
 Session locator 使用一个统一机制：扫描 Pi 的本地 Session catalog，并按 exact Session ID 定位任意本地持久化的 Session。它不以当前 cwd、Git 仓库或目录层级限制查询。`memory_sessions` 可以提供搜索或过滤来帮助发现 ID，但这与 exact-ID locator 是两件事。
@@ -628,7 +677,7 @@ Session locator 使用一个统一机制：扫描 Pi 的本地 Session catalog�
 ```ts
 {
   sessionId?: string; // 默认当前 Session，必须 exact match
-  nodeId?: NodeId;    // 默认虚拟 root
+  nodeId?: NodeId;    // 默认 tree.root.id
   limit?: number;
   cursor?: string;
 }
@@ -637,11 +686,11 @@ Session locator 使用一个统一机制：扫描 Pi 的本地 Session catalog�
 输出 direct children：
 
 - ID、kind、position；
-- Segment title/summary、时间范围、child count、leaf count；
-- Observation 时间、relevance、content；
+- Segment title/summary、从 descendants 推导的 source range、child count、leaf count；
+- Observation content 和从 source entries 推导的 range；
 - 是否还有下一页。
 
-`memory_ls` 不递归，也不返回 raw source，因此输出可控且适合导航。
+`memory_ls` 不递归，也不返回 raw source，因此输出可控且适合导航。它与 Compact、read、export 共用 MemoryTreeStore 提供的节点行为和遍历逻辑；Root 为单 Observation 时没有 children，返回该节点 metadata 和空列表。
 
 ### 9.3 `memory_read`
 
@@ -662,7 +711,7 @@ Session locator 使用一个统一机制：扫描 Pi 的本地 Session catalog�
 
 - 读取 Segment：返回 title、summary、children，并按 `depth` 展开。
 - 读取 Observation：返回完整 Observation；`includeSources=true` 时解析原始 source entries。
-- 读取 Root：返回该 Session 的最新 TLDR 和树视图。
+- `nodeId` 指向 Root 时不切换格式：Observation Root 按 Observation 返回，Segment Root 按 Segment 返回。
 - `format=json/jsonl` 返回稳定机器可读结构。
 - 指定 `outputPath` 时写完整结果，工具响应只返回路径、行数、字节数和摘要；未指定时遵循 Pi 工具输出截断约定并提供 continuation。
 
@@ -671,7 +720,7 @@ JSONL 导出采用可分析的扁平记录：
 ```json
 {"recordType":"session","sessionId":"...","name":"...","cwd":"..."}
 {"recordType":"node","sessionId":"...","nodeId":"s_...","parentId":null,"position":0,"kind":"segment","title":"...","summary":"..."}
-{"recordType":"node","sessionId":"...","nodeId":"064d...","parentId":"s_...","position":0,"kind":"observation","timestamp":"...","relevance":"high","content":"..."}
+{"recordType":"node","sessionId":"...","nodeId":"064d...","parentId":"s_...","position":0,"kind":"observation","content":"...","sourceEntryIds":["entry..."]}
 {"recordType":"source","sessionId":"...","observationId":"064d...","sourceEntryId":"entry...","entryType":"message","content":"..."}
 ```
 
@@ -755,11 +804,12 @@ Segment Memory Tree 从使用本版本创建的新 Session 开始建立。旧版
 ```text
 src/
 ├─ agents/
-│  └─ observer/                 # Observation + cadence Segment + Root TLDR，一次模型调用
+│  └─ observer/                 # 一次模型调用输出递归树增量
 ├─ memory-tree/
-│  ├─ types.ts                  # Observation/Segment/events/type guards
-│  ├─ fold.ts                   # 唯一 event reducer + invariants
-│  ├─ render.ts                 # depth frontier + deterministic summary
+│  ├─ types.ts                  # persisted records 与 model proposals
+│  ├─ store.ts                  # event 重放、通用节点更新、整树 invariants
+│  ├─ node.ts                   # 统一 render/children/preview/export 行为
+│  ├─ render.ts                 # depth recursion + deterministic summary
 │  ├─ inspect.ts                # ls/read DTO，不含 Pi UI
 │  └─ export.ts                 # JSON/JSONL records
 ├─ sessions/
@@ -767,7 +817,7 @@ src/
 ├─ hooks/
 │  ├─ consolidation-trigger.ts  # token cadence → Observer
 │  ├─ compaction-trigger.ts     # 复用
-│  └─ compaction-hook.ts        # depth frontier → render
+│  └─ compaction-hook.ts        # depth recursion → render
 ├─ tools/
 │  ├─ memory-sessions.ts
 │  ├─ memory-ls.ts
@@ -807,12 +857,13 @@ src/
 
 | 设计知识 | 唯一所有者 |
 |---|---|
-| Segment 结构合法性、单父、连续 range | `memory-tree/fold.ts` |
+| 节点更新、Segment 结构合法性、单父、顺序和重建后全树验证 | `memory-tree/store.ts` |
+| 节点 render/children/preview/export 行为 | `memory-tree/node.ts` |
 | depth cutoff 与完整树渲染 | `memory-tree/render.ts` |
-| Observation/Segment/TLDR 模型语义 | Observer prompt/agent |
-| Observer batch cadence、branch generation、in-flight | `runtime.ts` + consolidation hook |
+| Observation/Segment 模型语义 | Observer prompt/agent |
+| Observer batch cadence、branch generation、串行状态 | `runtime.ts` |
 | Session ID 到文件解析 | `sessions/catalog.ts` |
-| Root TLDR 生成与版本持久化 | Observer + `om.observations.recorded` |
+| Segment Root summary 生成与版本持久化 | Observer + `om.observations.recorded` |
 | 导出 schema | `memory-tree/export.ts` |
 
 工具、commands 和 hooks 不重复实现上述规则。
@@ -829,12 +880,12 @@ V4 输出：
 ── Memory tree ──
 Observations: 248
 Segments: 37
-Root frontier: 12 nodes (4 segments, 8 observations)
+Root: segment / 12 children (4 segments, 8 observations)
 Tree depth: max 5
 Render depth: 2
-Rendered frontier: 19 nodes / ~6,420 tokens
-Flat observation baseline: ~31,800 tokens
-Compression vs flat: 79.8%
+Rendered nodes: 27 Segment/Observation nodes / ~8,100 tokens
+Flat observations: ~31,880 tokens
+Rendered vs flat observations: 25.4%
 
 ── Activity ──
 Next observation: ...
@@ -844,8 +895,8 @@ Observer: idle | running
 Last observer error: ...
 
 ── Diagnostics ──
-Rejected persisted segments: 0
-Unknown source boundaries: 0
+Last proposal warning: none
+Tree validation: valid
 ```
 
 这些 Token 数只用于本地诊断显示，不发送到外部，也不控制正常行为。
@@ -859,7 +910,7 @@ Unknown source boundaries: 0
 - `observer.segmented`
 - `observer.segment_rejected`
 - `tree.rebuilt`
-- `tree.invalid_entry`
+- `tree.rebuild_failed`
 - `render.completed`
 
 默认记录 ID、count、token、depth、compression ratio 和错误，不记录完整 conversation/prompt/summary 内容。
@@ -870,10 +921,10 @@ Unknown source boundaries: 0
 
 - 哪一段旧历史长期停在浅层；
 - 哪个 Segment summary 压缩率异常；
-- depth 1/2/3 的 frontier 差异；
+- depth 1/2/3 的完整分层渲染差异；
 - Observer 的 Segment cadence 是否过度或不足归纳。
 
-Inspector 还应沿 Observer event 时间线展示 Root TLDR，让用户看到 Session 的整体描述如何随工作推进而变化；这些历史版本直接来自已有 `om.observations.recorded` entries，不另建一套存储。
+Inspector 还应展示 Root 从首个 Observation 升级为 Segment，并沿 Observer event 时间线展示此后 Root Segment 的历次 records，让用户看到其 title、summary 和 children 如何随工作推进而变化；这些历史版本直接来自已有 entries，不另建存储。
 
 实现时由 `/om:inspect` 启动 localhost 随机端口服务，并在 `session_shutdown` 关闭；不在 extension factory 启动常驻资源。
 
@@ -884,18 +935,18 @@ Inspector 还应沿 Observer event 时间线展示 Root TLDR，让用户看到 S
 | 场景 | 行为 |
 |---|---|
 | 后台 Observer 模型不可用 | 不写 event、不推进 coverage/batch 计数；保留原始 Session；通知一次 |
-| Segment proposal 非连续/重叠 | 拒绝 proposal；不修改树 |
-| Segment summary 不压缩 | 拒绝 proposal；让 agent 缩短后重试 |
-| malformed persisted custom entry | 忽略该 entry；记录 diagnostic |
+| 新 Segment proposal 局部非法 | 删除该 Segment，将合法 children 原位提升，warning |
+| Segment title/summary 更新非法 | 已有节点保留该字段旧值，其他合法更新继续，warning |
+| 归一化后的整体结构非法 | 拒绝结构更新；合法新 Observations 尽可能未分组追加，warning |
+| 本插件持久化 event malformed 或重建后整树非法 | MemoryTree 重建明确失败；禁止 Renderer、Compact 和 tools 消费，不静默跳过或修复 |
 | sourceEntryId 在 branch 中缺失 | Observation 仍参与按深度渲染；source read 标 partial |
-| Compact 时整棵树为空 | 保留本轮更新后的 Root TLDR event；插件不接管，回退 Pi native compaction |
+| forced Observer 后仍无 Observation | 插件不接管，回退 Pi native compaction；单 Observation Root 则正常渲染 |
 | Compact-forced Observer 整体失败 | 取消本次 Compact 并 warning；不写 event、不回退 native、不删除 raw history |
-| Segment forest 非法 | 丢弃非法 Segment，保留有效 Observations/TLDR，warning 并保持 Segment due；Compact 可继续平铺渲染 |
 | Compact 与后台 Observer 相遇 | forced run 串行排队；获得执行权后基于最新 branch 重新运行，不复用旧 run |
+| duplicate Compact hook | 第一个仍执行时直接取消第二个并 warning，不再排队 forced Observer |
 | Session/branch 在模型调用期间切换 | Abort 或 active-branch generation 校验失败，禁止 append |
 | 历史 Session 文件不存在/损坏 | 工具返回明确错误，不回退到名称猜测 |
 | 导出路径写失败 | 工具失败且不报告成功；内存不受影响 |
-| Segment ID 极小概率冲突 | first-valid wins，后续冲突 proposal 拒绝并记录 diagnostic |
 
 ---
 
@@ -905,56 +956,67 @@ Inspector 还应沿 Observer event 时间线展示 Root TLDR，让用户看到 S
 
 至少覆盖：
 
-- Observations 按首次记录顺序进入 Root；
+- 零 Observation 时无 Root，第一个 Observation 自身成为 Root，第二个出现时创建以至少两个 Observations 为 children 的 Root Segment；
+- Segment 的较新同 ID record 更新当前投影但不改写历史 entry；
+- 模型 proposal 中已有 Root 的字段局部非法时保留旧字段，其余合法更新继续；
+- 两个 Segment 直接或间接引用同一 child 时整树验证失败，不能退化为 DAG；
+- 有 Observation 却没有 Root、多个无 parent 节点、cycle、悬空节点、缺失 child 和重复 child 被拒绝；
 - 连续 Root children 被 Segment 原位替换；
 - 非连续、逆序、重复、缺失、已归属 child 被拒绝；
 - 同批多 Segment 不重叠并保持顺序；
 - Segment 可同时包装 Segment 与 Observation，且各 child subtree 深度可以不同；
 - 不可产生多父或 cycle；
-- branch fold 只读取 active path；
-- malformed/unknown events 被忽略；
-- Segment 渲染成本不小于 children 时拒绝。
+- branch 重放只读取 active path；
+- 本插件持久化 event malformed 或最终全树非法时重建明确失败；
+- 任一 Segment 少于两个 direct children 或当前渲染成本不小于 children 时拒绝；
+- proposal 把 Root Segment 全部 children 包成唯一 child 时拒绝；
+- 新 Segment 局部非法时移除该层并按原序提升合法 children。
 
 ### 15.2 Render tests
 
 以 `segment_memory_tree.md` 中的示例树做 golden test：
 
-- depth 0、1、2、3 frontier；
-- 旧 Segment summary + 近期 Observations 的顺序；
-- flat depth 输出与全部 Observations baseline 一致；
-- 任意有限 depth 的估算 token 不超过 flat baseline；
-- Segment/Observation 行包含可用于工具读取的 ID。
+- 单 Observation Root 在任何 depth 都只输出该 Observation；Segment Root 的 depth 0 只输出其标准 Segment 行；
+- depth 1、2、3 都按同一递归规则保留所有访问到的 Segment 和 Observation；
+- 展开 Segment 后，其自身 summary 仍位于 children 之前；
+- 足够大的 depth 输出树中全部 Segment 和 Observation；
+- 每个 depth 的本地 token 估算与实际渲染节点一致；
+- Segment/Observation 行包含可用于工具读取的 ID，Observation 不含 timestamp、relevance 或持久化 tokenCount。
 
 ### 15.3 Depth rendering tests
 
-- 同一棵树在相同 `memoryDepth` 下始终产生相同 frontier；
-- 改变 `firstKeptEntryId` 不改变 memory frontier；
+- 同一棵树在相同 `memoryDepth` 下始终产生相同 preorder 节点序列；
+- 改变 `firstKeptEntryId` 不改变 memory 渲染结果；
 - Observation 即使其 source 仍在 raw tail 中，也按树深度正常进入 summary；
 - source ID 缺失不影响深度渲染，source read 单独标 partial。
 
 ### 15.4 Observer/Segment tests
 
-- 一次 Observer 模型输出同时包含 Observations、Root TLDR 和可选 Segment forest；
-- 每个成功 run 只写一个 event；
-- 成功非空 batch 计数，empty/failure 不计数；
-- 第 2 个成功 batch 执行 Segment 并归零；
+- 一次 Observer 只返回一个 `tree` 递归增量；新 Observation、新 Segment、existing ref 和已有 Root Segment 新版本可在同一结构中出现；
+- 新 Observation 和新 Segment 不带 ID，已有 Segment 新版本使用 `id`，不使用 `targetId`、临时 ID 或 `observationIndex`；
+- 单次可提交嵌套、多层、非平衡 Segment；代码自底向上生成 ID 并验证依赖；
+- V1 允许携带当前 Root Segment ID，拒绝更新其他已有 Segment；
+- 每个成功 run 最多写一个 event；成功 empty 与 failure 都不写 coverage、不计普通 batch；
+- 第 2 个成功非空 batch 执行 Segment 并在 `complete` 时归零；`partial` 保持 due；
 - Compact 无视计数强制 Segment，并在一个不受后台 chunk cap 限制的输入中 flush 全部 pending raw source；
-- 单次可提交嵌套、多层、非平衡 proposal forest；代码自底向上生成 ID 并验证依赖；
-- 无效 Segment forest 不丢弃同轮有效 Observations/TLDR，不进入 ledger，并产生用户可见 warning；
-- rejected Segment 不重置 cadence，下一次 Observer 继续尝试；
-- Compact 仅 Segment rejected 时继续平铺渲染；Observer 整体 failure 时取消 Compact，不回退 Pi native compaction。
+- 无效新 Segment 被移除并提升合法 children；字段局部失败保留旧值；两者都产生用户可见 warning；
+- Compact 仅局部 proposal 失败时继续渲染合法结果；Observer 整体 failure 时取消 Compact，不回退 Pi native compaction。
 
 ### 15.5 Lifecycle/race tests
 
 - `session_shutdown` abort worker；
 - Session ID 或 active-branch generation 改变后不 append；
-- proposal 返回期间 Root frontier 改变会复验并拒绝；
+- proposal 返回期间 Root Segment children 改变会复验并拒绝；
 - Compact forced Observer 与后台 Observer 串行排队，且 forced run 基于最新 branch 新跑一轮；
-- Root TLDR 写入 Observer event，fold 使用最新有效版本并保留历史；
+- 单 Observation 自身作为 Root 且不写 Segment record；第二个 Observation 出现时才创建标准 Root Segment record；
+- Root Segment 使用普通 Segment ID 生成和版本规则，children 更新不创建专用 ID、节点类型或 summary 字段；
+- Root Segment 使用通用更新能力；title、summary 或 children 局部失败时保留旧部分并 warning，首次创建无法归一化成合法 Root 时整轮失败；
 - Compact-forced Observer 失败时取消 Compact、warning，且 raw history 保持不变；
-- forced Observer 成功但整棵树为空时保留 TLDR event，并回退 Pi native compaction；
-- duplicate compact hook 有明确处理；
-- `/tree` 导航后 cache 按新 branch 重建。
+- forced Observer 成功但仍无 Observation 时回退 Pi native compaction，单 Observation Root 正常由插件渲染；
+- duplicate compact hook 在第一次仍执行时直接取消并 warning，不排队第二个 forced Observer；
+- `/tree` 导航后 cache 按新 branch 重建并通过全树验证后才发布；
+- session start、Compact 前重建和跨 Session 读取都执行同一全树验证器；
+- 最终验证失败时 Renderer/Compact/tools 不消费该结构。
 
 ### 15.6 Cross-session/tool tests
 
@@ -963,9 +1025,10 @@ Inspector 还应沿 Observer event 时间线展示 Root TLDR，让用户看到 S
 - exact Session ID 可跨 cwd/仓库定位；
 - 无记忆 Session 被 catalog 过滤；
 - ephemeral Session 只在当前 Runtime 可读；
-- `memory_sessions` 返回最新 Root TLDR；
-- `memory_ls` pagination；
-- `memory_read` Root 返回 TLDR，Observation 返回 source provenance；
+- `memory_sessions` 对 Segment Root 返回 title/summary，对单 Observation Root 返回内容预览；
+- `memory_ls` 省略 `nodeId` 与显式传入 `tree.root.id` 返回相同 children，并支持 pagination；
+- `memory_read` 按 Root 的实际 kind 返回 Segment 或 Observation 结构；Observation 保留 source provenance；
+- JSONL 中 Root 只是 `parentId:null` 的普通 node record，kind 可以是 observation 或 segment；
 - JSONL 每行可独立 `JSON.parse`，parent/position 可重建同一树；
 - output truncation 和完整文件导出。
 
@@ -982,16 +1045,19 @@ npm run typecheck
 
 V4 首版必须同时满足：
 
-1. 每次 Observer 只发起一个模型请求，同时生成 Observations、Root TLDR 和到期时的 Segment forest。
+1. 每次 Observer 只发起一个模型请求并返回一个递归 `tree` 增量；新节点不带 ID、已有节点用 `ref`、已有 Segment 新版本复用其 `id`，同轮可创建任意深度的新 Segment。
 2. `segmentEveryObserverRuns` 默认 2；每次 Compact 无视计数、无视后台 chunk cap，强制 Observer 一次处理全部 pending raw 并执行 Segment；失败则取消 Compact。
 3. 默认 `memoryDepth=2`。
 4. 没有正常渲染 token budget/planner。
-5. 每个有效节点最多一个 parent。
-6. 每个 top-level proposal subtree 必须覆盖连续 Root range；单次 Observer 可创建任意深度的非平衡 forest。
-7. 每个 Segment 是严格非膨胀表示。
-8. Segment 阶段没有产出时，系统仍退化为可用的平铺 Observation memory。
-9. Observation → source entry 的追溯保持可用。
-10. 当前和本版本创建的持久化 Session 可通过 exact ID 导航。
+5. Root 是位置而非节点类型：第一个 Observation 是 Root，第二个出现时创建至少有两个 children 的 Segment 作为新 Root。
+6. TreeStore 提供通用 Segment 新版本能力；V1 策略只允许 Observer 更新 Root Segment，持久化格式不封死后续能力。
+7. 每次 branch 重建后必须通过独立的全树验证；共享 child、DAG、cycle、悬空或缺失节点时禁止渲染和 Compact。
+8. Root 是唯一没有 parent 的节点，其他每个有效节点恰好一个 parent；每个 Segment 至少两个 direct children。
+9. 递归增量展开后必须保持全部 Observation 的 source ledger 顺序；单次 Observer 可创建任意深度的非平衡 Segment。
+10. 每个 Segment 在停止展开时是严格非膨胀表示；渲染保留全部访问到的祖先和 descendants，不声称完整分层输出小于平铺 Observations。
+11. Best-effort 归一化只移除非法局部 Segment并提升其合法 children；局部失败不丢弃同轮有效 Observations。
+12. Observation → source entry 的追溯保持可用。
+13. 当前和本版本创建的持久化 Session 可通过 exact ID 导航。
 
 ---
 
@@ -1015,11 +1081,13 @@ V4 首版必须同时满足：
 任务：
 
 - 增加 Segment types/type guards/builders。
-- 实现 fold reducer、Root range replacement 和 diagnostics。
-- 实现只由 `memoryDepth` 决定的完整树 frontier renderer。
+- 实现 event 重放、通用 Segment 新版本应用、Root Segment children 更新和 diagnostics。
+- `MemoryTree.root` 是 `Observation | Segment`：首个 Observation 自身成为 Root，第二个出现时创建 Segment Root；不创建 Root subclass、专用 ID 或独立 summary 状态。
+- 实现 proposal best-effort 归一化，以及提交与重建发布共用的全树验证器，显式拒绝共享 child/DAG、cycle、悬空和缺失节点。
+- 实现对每个访问到的 Segment 先输出自身、再由 `memoryDepth` 决定是否递归 children 的 renderer。
 - 写 pure unit/golden/property-style invariant tests。
 
-退出条件：给定任意合法/恶意事件序列，fold 不抛错且 invariant 成立；render 不超过 flat baseline。
+退出条件：合法事件序列可稳定重建；本插件持久化数据 malformed 时明确报错；每次重建只有通过全树验证才发布；render 对同一 tree/depth 产生稳定的完整 preorder 节点序列。
 
 ### Phase 2：扩展 Observer 并改造后台 pipeline
 
@@ -1027,13 +1095,13 @@ V4 首版必须同时满足：
 
 任务：
 
-- 扩展 Observer prompt 和单次结构化输出，同轮返回 Observations、Root TLDR，以及到期时的多层非平衡 Segment forest。
-- 用统一 `om.observations.recorded` event 原子保存结果。
+- 扩展 Observer prompt 和单次结构化输出：同轮返回一个递归 `tree` 增量，内联新 Observations 和任意深度的新 Segments，并用现有 ID 表达 Root Segment 新版本。
+- 删除 Observation timestamp/relevance 和持久化 tokenCount；用统一 `om.observations.recorded` event 保存归一化后的 node records。
 - 从 ledger 推导成功非空 batch 计数；`segmentEveryObserverRuns` 默认 2，达到 cadence 时启用 Segment 输出并在成功后归零。
-- 增加 Session abort 和 active-branch generation；append 前复验 source branch 与 Root frontier。
+- 增加 Session abort 和 active-branch generation；append 前复验 source branch 与 Root children。
 - 删除 Reflector/Dropper 调用和第二个 Segment Agent 概念。
 
-退出条件：每个后台 trigger 只有一个模型请求和一个 event；empty/failure 不推进 coverage/cadence；并发切换不产生 stale append。
+退出条件：每个后台 trigger 只有一个模型请求、最多一个 event；empty/failure 不推进 coverage/cadence；并发切换不产生 stale append。
 
 ### Phase 3：切换 Compact、配置和命令
 
@@ -1041,13 +1109,13 @@ V4 首版必须同时满足：
 
 任务：
 
-- `compaction-hook` 在渲染前通过串行队列强制运行一次 Observer；该 run 不使用后台 chunk cap，一次 flush 全部 pending raw，并无视 cadence 生成 Segment forest 与 Root TLDR。
-- Observer 成功后 fold 统一 event，再执行 depth frontier → deterministic render；失败则取消 Compact 并 warning。
-- compaction details 只保存 `memoryDepth` 和 rendered frontier。
+- `compaction-hook` 在渲染前通过串行队列强制运行一次 Observer；该 run 不使用后台 chunk cap，一次 flush 全部 pending raw，并无视 cadence 生成递归树增量；Root 已是或本轮成为 Segment 时同时保存其 record。
+- Observer 成功后重放统一 event，再执行完整 depth recursion → deterministic render；失败则取消 Compact 并 warning；duplicate hook 在首个仍运行时直接取消。
+- compaction details 只保存 `memoryDepth` 和实际 `renderedNodeIds`。
 - 新增 `memoryDepth` 与 `segmentEveryObserverRuns`（默认 2），移除三个 Reflection/Pool 配置。
-- `/om:status` 显示树深度、frontier 和估算压缩比例。
-- `/om:view` 支持当前 tree 和最近一次 visible frontier。
-- forced Observer 成功但整棵树为空时，保留已更新的 Root TLDR event，并像旧版一样回退 Pi native compaction。
+- `/om:status` 显示树深度、各 depth 的渲染节点数和 token 估算。
+- `/om:view` 支持当前 tree 和最近一次完整 rendered nodes。
+- forced Observer 成功但仍无 Observation/MemoryTree 时，像旧版一样回退 Pi native compaction。
 
 退出条件：手动、proactive、Pi overflow compaction 都先强制运行一轮不受后台 chunk cap 限制的 Observer，再走同一树投影路径；默认 depth 2 行为通过 golden tests；Observer 失败时取消 Compact，且 raw history 不变。
 
@@ -1062,7 +1130,7 @@ V4 首版必须同时满足：
 - 将现有 recall source 解析复用到 `memory_read`。
 - 增加 JSON/JSONL DTO 与 `outputPath` 导出。
 
-退出条件：模型可从 Session discovery → Root ls → Segment read → Observation source read 完成跨 Session 追溯；JSONL 可被脚本逐行解析。
+退出条件：模型可从 Session discovery → Root read/ls → Segment read → Observation source read 完成跨 Session 追溯；JSONL 可被脚本逐行解析。
 
 ### Phase 5：删除旧架构并发布文档
 
@@ -1089,10 +1157,10 @@ V4 首版必须同时满足：
 
 | 风险 | 当前控制 | 何时重新设计 |
 |---|---|---|
-| Observer 的 Segment 阶段长期不产出，Root 继续平铺 | 平铺仍正确；status 暴露 Root/深度 | 真实 workload 中 depth=2 长期接近 flat baseline |
+| Observer 的 Segment 阶段长期不产出，顶层 Observations 长期不归组 | 记忆仍完整；status 暴露树深度和各 depth 估算 | 真实 workload 中默认 depth 的渲染体积持续过大 |
 | Observer 过度归纳 | 历史区间判据、每 Segment 至少两 child、source 可追溯 | read 经常需要立刻展开且 summary 无法支持继续任务 |
 | Summary 丢失关键细节 | childIds 保留完整 subtree；memory_read 可展开 | 经常出现“必须展开才能避免错误决策” |
-| Observer model context 不够同时容纳 raw chunk 与 Root frontier | 失败不推进 coverage；Compact-forced run 失败则取消 Compact、保留 raw history | context failures 可复现且持续发生 |
+| Observer model context 不够同时容纳 raw chunk 与 Root direct children | 失败不推进 coverage；Compact-forced run 失败则取消 Compact、保留 raw history | context failures 可复现且持续发生 |
 | Sub-agent Session 不可见 | 明确要求持久 child + 插件加载 | 目标 Sub-agent package 提供稳定 parent/child metadata contract |
 
 ---
@@ -1102,15 +1170,15 @@ V4 首版必须同时满足：
 ```text
 1. 用户与 Pi 工作，Session 正常追加 message/tool entries。
 2. 第一次达到 observeAfterTokens。
-3. Observer 用一次模型请求读取 raw chunk 和 Root，输出 O101..O103 与 Root TLDR；batch count 变为 1，尚不执行 Segment。
+3. Observer 用一次模型请求返回一个内联新 Observation 的 `tree` 增量；代码生成 `O101`，此时 `tree.root = O101`，没有 Segment，batch count 变为 1。
 4. 第二次达到 observeAfterTokens。
-5. Observer 仍只用一次模型请求，输出新 Observations、更新后的 Root TLDR，以及多层 Segment proposal forest；因为 count 达到默认 2，本轮执行 Segment。
-6. 代码先生成 Observation IDs，再自底向上生成/验证 Segment IDs，追加一个 om.observations.recorded event；batch count 归零。
-7. TreeStore fold 该 event：先追加新 Observations，再原子应用 forest，Root 因而变浅而旧历史变深。
+5. Observer 仍只用一次模型请求，返回递归 `tree` 增量：用 `ref` 引用 `O101`，内联 `O102..O105`，并以内嵌 Segment 表达多层归组；新 Root Segment 不带 ID。
+6. 代码递归归一化 proposal，先生成 Observation IDs，再自底向上生成 Segment IDs；合法结果形成至少有两个 children 的 Segment Root，展平成 node records 后追加一个 `om.observations.recorded` event，并把 batch count 归零。
+7. TreeStore 重放该 event并运行完整树验证；Root 从 `O101` 升级为 Segment，旧历史变深而全部访问到的层级仍可显示。
 8. Pi 触发 Compact，即使 pending raw 尚未达到 observeAfterTokens，也强制运行一次 Observer。
-9. Compact 开始前先运行一次 Observer。它读取上次 Observer 之后新增的全部对话，并在一次模型调用中生成新的 Observations、整理 Segment、更新 Root TLDR。成功后再执行 Compact；调用失败则终止本次 Compact 并显示警告。
-10. 成功路径只按 memoryDepth=2 确定性渲染完整记忆树；firstKeptEntryId 仅交还给 Pi 管理 raw tail。
-11. 跨 Session discovery 读取最新 TLDR，后续 Inspector 可展示历次 Observer event 中的变化。
+9. Compact 开始前先运行一次 Observer。它读取上次 Observer 之后新增的全部对话，并在一次模型调用中返回新的递归树增量；已有 Root Segment 通过同一 `id` 更新。成功后再执行 Compact；调用失败则终止本次 Compact并显示警告。
+10. 成功路径按 `memoryDepth=2` 从当前 Root preorder 渲染所有访问到的 Segment 和 Observation；直接返回 Pi preparation 给出的 `firstKeptEntryId` 管理 raw tail。
+11. 跨 Session discovery 对 Segment Root 读取 summary，对单 Observation Root 读取内容预览；后续 Inspector 可展示 Root 类型转换和 Segment revisions。
 12. 需要细节时：
     memory_sessions → memory_ls → memory_read(S_fix) → memory_read(O102, includeSources=true)。
 13. 需要周/月复盘时，对多个 exact Session ID 导出 JSONL，再用 shell/Python/Polars/DuckDB 分析。
@@ -1118,10 +1186,10 @@ V4 首版必须同时满足：
 
 这套执行逻辑把责任固定为：
 
-- **Observer**：一次模型调用完成 Observation 提取、Root TLDR 更新，并按 batch cadence 或 Compact 强制执行 Segment。
-- **TreeStore**：拥有结构合法性、cadence fold 和唯一父关系。
-- **Depth Renderer**：只按配置决定当前保留几层细节。
+- **Observer**：一次模型调用返回递归树增量，完成 Observation 提取、Root Segment 更新和按 cadence/Compact 触发的多层 Segment grouping。
+- **TreeStore**：负责 proposal best-effort 归一化、通用 Segment 更新、单 Observation Root → Segment Root 转换、cadence 重放、唯一父关系和重建后的全树验证。
+- **Depth Renderer**：显示每个访问到的节点，只按配置决定是否继续递归 children。
 - **Pi Session**：拥有身份、branch、持久化和 raw-tail 生命周期。
 - **Memory tools**：负责按需展开，不参与记忆生成。
 
-最终系统没有第二套数据库，也没有 token planner；当 Observer 的 Segment 阶段没有产出时，它退化为已经被真实使用验证过的平铺 Observation 模式。
+最终系统没有第二套数据库，也没有 token planner；当 Observer 的 Segment grouping 没有产出时，Observations 仍作为合法树节点完整保留。
