@@ -234,11 +234,11 @@ type SegmentMemoryDetails = {
   type: "om.segment-tree.rendered";
   version: 1;
   memoryDepth: number;
-  renderedNodeIds: NodeId[]; // 按 preorder 实际显示的全部 Segment 和 Observation
+  renderedNodeIds: NodeId[]; // 按实际渲染顺序显示的全部 Segment 和 Observation
 };
 ```
 
-`renderedNodeIds` 是本次 Compact 按 preorder 实际显示的全部节点：每个被访问到的 Segment 先记录自身，再在深度允许时记录其 descendants；Observation 直接记录。它可用于 `/om:view visible` 和可见/当前差异诊断。Root 为 Segment 时已由 Observer event 持久化；Root 为单个 Observation 时直接引用该 Observation record，均不在 compaction details 中复制。
+`renderedNodeIds` 是本次 Compact 按实际渲染顺序显示的全部节点：每个 Segment 先记录自身，再记录其 direct Observations，最后在深度允许时递归记录 child Segments；两类 children 各自保持原相对顺序。它可用于 `/om:view visible` 和可见/当前差异诊断。Root 为 Segment 时已由 Observer event 持久化；Root 为单个 Observation 时直接引用该 Observation record，均不在 compaction details 中复制。
 
 ### 4.5 Session 身份
 
@@ -609,21 +609,49 @@ Compact 不自动修改 `memoryDepth` 或做 token optimization。forced Observe
 
 ### 8.4 Summary 格式
 
-Compact memory 从当前 Root 按树的 preorder 输出：每个访问到的 Segment 行先于其 children，已展开的中间 Segment 也完整保留；每个访问到的 Observation 同样输出。`memoryDepth=0` 时只有 Root，更深配置只继续递归，不删除已经显示的祖先。Root 为 Segment 时，跨 Session discovery 读取其 summary；Root 为单 Observation 时读取该 Observation 的内容预览。若 forced Observer 后仍未产生任何 Observation，插件回退 Pi native compaction：
+Compact memory 按树渲染。Segment 使用 ATX 多级标题表达父子关系：Root Segment 使用一级标题，descendant Segment 每深入一层增加一级；每个 Segment 的 direct Observation children 则紧跟 summary，以 `1. 2. 3.` 有序列表输出，然后再输出 child Segments。`memoryDepth=0` 时只有 Root，更深配置只继续递归，不删除已经显示的祖先。Root 为 Segment 时，跨 Session discovery 读取其 summary；Root 为单 Observation 时读取该 Observation 的内容预览。若 forced Observer 后仍未产生任何 Observation，插件回退 Pi native compaction。
+
+以下是 `memoryDepth=2` 时最终注入模型上下文的完整预期格式：
 
 ```md
-These are condensed memories from earlier in this session.
+These are your past working memories, organized as a Segment Tree.
 
-- Segment entries summarize historical ranges; a Segment Root summarizes the whole session. Every displayed Segment remains visible when expanded.
-- Observation entries are source-backed events; a singleton Observation may itself be the Root. Use memory_read to inspect provenance.
-- Newer records supersede conflicting older records.
+- Headings are Segments, and each `[ID]` is a node ID.
+- Numbered items are leaf Observations.
+- Older memories may retain only high-level summaries. Use `om_read` with a node ID to expand and review them if you need.
 
-## Memory
-[s_a1b2c3d4e5f6] Fix npm extension peer resolution — Root cause was the temporary npm peer boundary; the final patch reused host VIRTUAL_MODULES, corrected Loaded reconciliation, passed validation, and opened PR #405.
-[47d4aa7245bb] agentic-review has an unresolved scalability risk...
+# [s_7f4a2c91d0be] Release automation and segment-memory design
+
+Fixed frontend and backend publish routing, then simplified the planned memory inspection API around a depth-readable tree.
+
+1. [e1a8459c3b72] The architecture now defines includeSummary=true by default and requires renderer golden tests against this Markdown format.
+
+## [s_04bc86a2fd31] Frontend release workflow repair
+
+Added RC branch creation handling, routed manual dispatch by ref, fixed unsafe create gates, promoted the change through dev/test/release, and verified an RC deployment.
+
+1. [737a2b11bf4a] Investigation found that creating a release branch at an existing commit emitted no useful push deployment, while manual dispatch mapped release/v0.3.3 to the dev Pack channel.
+2. [722b3da55001] The publish workflow gained a create trigger and ref-aware metadata so release/v0.3.3 resolves to an rc image and Pack update.
+
+## [s_b9320fd187ca] Backend release workflow repair
+
+Ported the frontend behavior through PR #498 while preserving dev/test creation publishes and preventing duplicate RC creation publishes.
+
+1. [3862145796aa] Review found that RC branch creation could emit both create and push events and publish twice.
+2. [3862181528bb] The final gate skips only an RC creation push; dev/test creation pushes retain their existing publish behavior.
+
+## [s_6d81f0a34c72] Segment-memory API simplification
+
+Replaced the memory-prefixed inspection tools with om_sessions and om_read, removed memory_ls and raw source expansion, and defined depth=-1 as an unlimited subtree read.
+
+1. [c7e2305d8ab4] The architecture still needs implementation and golden tests for the documented Markdown tree renderer.
+
+### [s_839eb7014d62] Inspection API decisions
+
+om_read uses includeSummary to control Segment summaries and keeps Observation content directly readable. This Segment is at the configured depth limit, so its children are not rendered.
 ```
 
-Segment 行必须同时含 ID、title、summary；Observation 行只含 ID 和 content。当前 Root 无论是哪种节点都按自身格式排在第一行。
+Segment 深度为 `d` 时使用 `d + 1` 级 ATX 标题，格式为 `${"#".repeat(d + 1)} [ID] title`，summary 作为标题后的正文。该 Segment 的 direct Observations 紧接着按 `1. [ID] content`、`2. [ID] content` 编号，每个 Segment 内从 1 重新开始；Observation 不占用标题层级。随后才递归输出 child Segments。达到 `memoryDepth` 的 Segment 仍显示标题和 summary，但不再显示其 children。若 Root 本身是单个 Observation，则使用 `# Memory` 加一条 `1. [ID] content`。
 
 ### 8.5 为什么首版不需要 token planner
 
@@ -643,56 +671,65 @@ V1 仍不增加动态 token planner。`memoryDepth` 是用户明确选择的展�
 
 跨 Session 查询只使用稳定的 Session ID 作为身份。插件不引入 `project`、Git repository 或 cwd ownership 等新的领域概念；cwd、目录前缀、仓库位置和本地索引都只能作为寻找 Session 文件的实现手段，不能改变 Session ID 的含义或限制可查询范围。
 
-目标公共能力保持三个工具，职责分离：
+目标公共能力保持两个工具，职责分离：
 
-1. `memory_sessions`：发现可读 Session。
-2. `memory_ls`：查看某个树节点的 direct children。
-3. `memory_read`：读取节点/subtree；Observation 可继续展开到原始 source。
+1. `om_sessions`：发现可读 Session。
+2. `om_read`：读取节点或按深度展开 subtree。
 
-### 9.1 `memory_sessions`
+### 9.1 `om_sessions`
 
 用途：解决“过去有哪些带记忆的 Session、ID 是什么”。
-
-它从本机可访问的 Pi Session 中发现带记忆的 Session，并支持必要的搜索、过滤和分页。具体使用 cwd prefix、Git 仓库位置、Pi 本地目录或其他索引属于可替换的定位实现，不进入 memory identity 契约。
-
-输出每项：
-
-- exact Session ID；
-- Root 为 Segment 时返回其 title/summary；Root 为单 Observation 时返回该 Observation 的内容预览；
-- 可选 `sessionName` 和 cwd；
-- Session 文件时间范围；
-- parentSession（若 Pi header 提供）；
-- Observation/Segment 数；
-- Root kind、Root 为 Segment 时的 child 数，以及最大深度；
-- 顶层最多 3 个 Segment/Observation 的短预览。
-
-Session locator 使用一个统一机制：扫描 Pi 的本地 Session catalog，并按 exact Session ID 定位任意本地持久化的 Session。它不以当前 cwd、Git 仓库或目录层级限制查询。`memory_sessions` 可以提供搜索或过滤来帮助发现 ID，但这与 exact-ID locator 是两件事。
-
-只对候选文件做只读打开，过滤没有 OM Observation/Segment entries 的 Session，并分页返回，禁止一次把所有 Session 内容注入模型上下文。不维护额外索引或真源。
-
-### 9.2 `memory_ls`
 
 输入：
 
 ```ts
-{
-  sessionId?: string; // 默认当前 Session，必须 exact match
-  nodeId?: NodeId;    // 默认 tree.root.id
-  limit?: number;
-  cursor?: string;
-}
+type OmSessionsInput = {
+  path?: string;       // 默认当前 cwd；只检索 cwd 等于或位于该路径下的 Session
+  keywords?: string[]; // 默认 []；在 Root Segment 的 title + summary 中检索
+};
 ```
 
-输出 direct children：
+`path` 默认当前 cwd，并先筛选候选 Session 集合；显式相对路径也按当前 cwd 解析，路径比较使用规范化后的目录边界而不是字符串前缀。`keywords` 默认空数组，即不做内容过滤；非空时，每个关键词都必须在 Root Segment 的 `title + summary` 中大小写不敏感地命中。两者同时提供时先按路径筛选，再按关键词检索。Root 为单 Observation 的 Session 没有 title/summary，因此只在 `keywords=[]` 时进入结果。工具仍不接受 `cursor` 或 `limit`。
 
-- ID、kind、position；
-- Segment title/summary、从 descendants 推导的 source range、child count、leaf count；
-- Observation content 和从 source entries 推导的 range；
-- 是否还有下一页。
+输出：
 
-`memory_ls` 不递归，也不返回 raw source，因此输出可控且适合导航。它与 Compact、read、export 共用 MemoryTreeStore 提供的节点行为和遍历逻辑；Root 为单 Observation 时没有 children，返回该节点 metadata 和空列表。
+```ts
+type OmSessionsResult = {
+  sessions: Array<{
+    sessionId: string;
+    sessionName?: string;
+    cwd?: string;
+    startedAt: string;
+    updatedAt: string;
+    parentSessionId?: string;
+    root:
+      | {
+          kind: "segment";
+          nodeId: NodeId;
+          title: string;
+          summary: string;
+          childCount: number;
+        }
+      | {
+          kind: "observation";
+          nodeId: NodeId;
+          preview: string;
+        };
+    observationCount: number;
+    segmentCount: number;
+    maxDepth: number;
+    topLevel: Array<{
+      nodeId: NodeId;
+      kind: "segment" | "observation";
+      preview: string;
+    }>; // 最多 3 项
+  }>;
+};
+```
 
-### 9.3 `memory_read`
+Session locator 扫描本机可访问的 Pi Session catalog，只读打开候选文件，过滤没有 OM Observation/Segment entries 的 Session，应用 `path`/`keywords` 条件后按 `updatedAt` 倒序返回紧凑 metadata。`path` 只影响 discovery 候选集合，不改变 Session identity，也不限制 `om_read` 按 exact `sessionId` 跨路径读取。它不维护额外索引或真源。需要查看具体内容时，将返回的 exact `sessionId` 传给 `om_read`。
+
+### 9.2 `om_read`
 
 输入：
 
@@ -700,8 +737,8 @@ Session locator 使用一个统一机制：扫描 Pi 的本地 Session catalog�
 {
   sessionId?: string; // 默认当前
   nodeId?: NodeId;    // 默认 root
-  depth?: number;     // 默认 1；0 只读节点自身
-  includeSources?: boolean;
+  depth?: number;     // 默认 1；-1 读取完整 subtree；0 只读节点自身
+  includeSummary?: boolean; // 默认 true；是否返回 Segment summary
   format?: "markdown" | "json" | "jsonl";
   outputPath?: string;
 }
@@ -709,8 +746,9 @@ Session locator 使用一个统一机制：扫描 Pi 的本地 Session catalog�
 
 行为：
 
-- 读取 Segment：返回 title、summary、children，并按 `depth` 展开。
-- 读取 Observation：返回完整 Observation；`includeSources=true` 时解析原始 source entries。
+- 读取 Segment：返回 ID、title 和 children metadata；`includeSummary=true` 时同时返回 summary，并按 `depth` 展开。
+- `depth=-1` 递归读取完整 subtree；非负值表示最多展开的 descendant 层数。
+- 读取 Observation：返回完整 Observation，不解析原始 source entries。
 - `nodeId` 指向 Root 时不切换格式：Observation Root 按 Observation 返回，Segment Root 按 Segment 返回。
 - `format=json/jsonl` 返回稳定机器可读结构。
 - 指定 `outputPath` 时写完整结果，工具响应只返回路径、行数、字节数和摘要；未指定时遵循 Pi 工具输出截断约定并提供 continuation。
@@ -721,12 +759,11 @@ JSONL 导出采用可分析的扁平记录：
 {"recordType":"session","sessionId":"...","name":"...","cwd":"..."}
 {"recordType":"node","sessionId":"...","nodeId":"s_...","parentId":null,"position":0,"kind":"segment","title":"...","summary":"..."}
 {"recordType":"node","sessionId":"...","nodeId":"064d...","parentId":"s_...","position":0,"kind":"observation","content":"...","sourceEntryIds":["entry..."]}
-{"recordType":"source","sessionId":"...","observationId":"064d...","sourceEntryId":"entry...","entryType":"message","content":"..."}
 ```
 
-这允许 shell、Python、Polars、DuckDB 直接处理，同时保持 node/edge/source 关系。
+这允许 shell、Python、Polars、DuckDB 直接处理，同时保持 node/edge 关系和 source provenance ID。
 
-### 9.4 跨 Session 边界
+### 9.3 跨 Session 边界
 
 - 省略 `sessionId`：只读当前 Runtime 的 active branch。
 - 指定 `sessionId`：通过通用 Session locator 做 exact match，定位后 read-only open；与当前 cwd、Git 仓库或目录层级无关。
@@ -810,7 +847,7 @@ src/
 │  ├─ store.ts                  # event 重放、通用节点更新、整树 invariants
 │  ├─ node.ts                   # 统一 render/children/preview/export 行为
 │  ├─ render.ts                 # depth recursion + deterministic summary
-│  ├─ inspect.ts                # ls/read DTO，不含 Pi UI
+│  ├─ inspect.ts                # read DTO，不含 Pi UI
 │  └─ export.ts                 # JSON/JSONL records
 ├─ sessions/
 │  └─ catalog.ts                # 本地 Pi Session discovery/exact-ID resolve
@@ -819,9 +856,8 @@ src/
 │  ├─ compaction-trigger.ts     # 复用
 │  └─ compaction-hook.ts        # depth recursion → render
 ├─ tools/
-│  ├─ memory-sessions.ts
-│  ├─ memory-ls.ts
-│  └─ memory-read.ts
+│  ├─ om-sessions.ts
+│  └─ om-read.ts
 ├─ commands/
 │  ├─ status.ts
 │  └─ view.ts
@@ -939,7 +975,7 @@ Inspector 还应展示 Root 从首个 Observation 升级为 Segment，并沿 Obs
 | Segment title/summary 更新非法 | 已有节点保留该字段旧值，其他合法更新继续，warning |
 | 归一化后的整体结构非法 | 拒绝结构更新；合法新 Observations 尽可能未分组追加，warning |
 | 本插件持久化 event malformed 或重建后整树非法 | MemoryTree 重建明确失败；禁止 Renderer、Compact 和 tools 消费，不静默跳过或修复 |
-| sourceEntryId 在 branch 中缺失 | Observation 仍参与按深度渲染；source read 标 partial |
+| sourceEntryId 在 branch 中缺失 | Observation 仍参与按深度渲染；其 source range/provenance 标 partial |
 | forced Observer 后仍无 Observation | 插件不接管，回退 Pi native compaction；单 Observation Root 则正常渲染 |
 | Compact-forced Observer 整体失败 | 取消本次 Compact 并 warning；不写 event、不回退 native、不删除 raw history |
 | Compact 与后台 Observer 相遇 | forced run 串行排队；获得执行权后基于最新 branch 重新运行，不复用旧 run |
@@ -974,21 +1010,22 @@ Inspector 还应展示 Root 从首个 Observation 升级为 Segment，并沿 Obs
 
 ### 15.2 Render tests
 
-以 `segment_memory_tree.md` 中的示例树做 golden test：
+以 8.4 的示例树做 golden test：
 
-- 单 Observation Root 在任何 depth 都只输出该 Observation；Segment Root 的 depth 0 只输出其标准 Segment 行；
+- 单 Observation Root 在任何 depth 都只输出 `# Memory` 和一条有序列表项；Segment Root 的 depth 0 只输出其一级 ID/title 标题和 summary；
 - depth 1、2、3 都按同一递归规则保留所有访问到的 Segment 和 Observation；
-- 展开 Segment 后，其自身 summary 仍位于 children 之前；
+- 展开 Segment 后，其自身 summary 位于 direct Observation 列表和 child Segment 标题之前；
+- direct Observations 在各自 Segment 内从 1 连续编号且不占用标题层级；
 - 足够大的 depth 输出树中全部 Segment 和 Observation；
 - 每个 depth 的本地 token 估算与实际渲染节点一致；
-- Segment/Observation 行包含可用于工具读取的 ID，Observation 不含 timestamp、relevance 或持久化 tokenCount。
+- Segment 标题包含 ID/title、正文包含 summary；Observation 列表项包含 ID/content，且不含 timestamp、relevance 或持久化 tokenCount。
 
 ### 15.3 Depth rendering tests
 
-- 同一棵树在相同 `memoryDepth` 下始终产生相同 preorder 节点序列；
+- 同一棵树在相同 `memoryDepth` 下始终产生相同渲染结果；
 - 改变 `firstKeptEntryId` 不改变 memory 渲染结果；
 - Observation 即使其 source 仍在 raw tail 中，也按树深度正常进入 summary；
-- source ID 缺失不影响深度渲染，source read 单独标 partial。
+- source ID 缺失不影响深度渲染，source range/provenance 单独标 partial。
 
 ### 15.4 Observer/Segment tests
 
@@ -1025,9 +1062,13 @@ Inspector 还应展示 Root 从首个 Observation 升级为 Segment，并沿 Obs
 - exact Session ID 可跨 cwd/仓库定位；
 - 无记忆 Session 被 catalog 过滤；
 - ephemeral Session 只在当前 Runtime 可读；
-- `memory_sessions` 对 Segment Root 返回 title/summary，对单 Observation Root 返回内容预览；
-- `memory_ls` 省略 `nodeId` 与显式传入 `tree.root.id` 返回相同 children，并支持 pagination；
-- `memory_read` 按 Root 的实际 kind 返回 Segment 或 Observation 结构；Observation 保留 source provenance；
+- `om_sessions.path` 默认当前 cwd，并按规范化 cwd 目录边界筛选 Session；
+- `om_sessions.keywords` 默认 `[]`；非空时对 Root Segment 的 title + summary 执行大小写不敏感的全关键词匹配；
+- `path` 与 `keywords` 可组合，结果按 `updatedAt` 倒序且不包含 cursor/limit；
+- `om_sessions` 对 Segment Root 返回 title/summary；未提供 `keywords` 时也返回单 Observation Root 的内容预览；
+- `om_read` 省略 `nodeId` 与显式传入 `tree.root.id` 返回相同结果；
+- `om_read` 支持 `depth=0`、有限正整数和 `depth=-1`，并按 `includeSummary` 控制 Segment summary；
+- `om_read` 按 Root 的实际 kind 返回 Segment 或 Observation 结构；Observation 保留 source provenance ID；
 - JSONL 中 Root 只是 `parentId:null` 的普通 node record，kind 可以是 observation 或 segment；
 - JSONL 每行可独立 `JSON.parse`，parent/position 可重建同一树；
 - output truncation 和完整文件导出。
@@ -1087,7 +1128,7 @@ V4 首版必须同时满足：
 - 实现对每个访问到的 Segment 先输出自身、再由 `memoryDepth` 决定是否递归 children 的 renderer。
 - 写 pure unit/golden/property-style invariant tests。
 
-退出条件：合法事件序列可稳定重建；本插件持久化数据 malformed 时明确报错；每次重建只有通过全树验证才发布；render 对同一 tree/depth 产生稳定的完整 preorder 节点序列。
+退出条件：合法事件序列可稳定重建；本插件持久化数据 malformed 时明确报错；每次重建只有通过全树验证才发布；render 对同一 tree/depth 产生稳定的完整节点序列。
 
 ### Phase 2：扩展 Observer 并改造后台 pipeline
 
@@ -1126,11 +1167,10 @@ V4 首版必须同时满足：
 任务：
 
 - 实现通用 `SessionCatalog`，支持本地 discovery 和不受 cwd/仓库限制的 exact Session ID 定位。
-- 注册 `memory_sessions`、`memory_ls`、`memory_read`。
-- 将现有 recall source 解析复用到 `memory_read`。
+- 注册 `om_sessions`、`om_read`。
 - 增加 JSON/JSONL DTO 与 `outputPath` 导出。
 
-退出条件：模型可从 Session discovery → Root read/ls → Segment read → Observation source read 完成跨 Session 追溯；JSONL 可被脚本逐行解析。
+退出条件：模型可从 Session discovery → Root/Segment/Observation read 完成跨 Session 读取；JSONL 可被脚本逐行解析。
 
 ### Phase 5：删除旧架构并发布文档
 
@@ -1141,7 +1181,7 @@ V4 首版必须同时满足：
 - 删除 Reflector、Dropper、coverage、pool、full-fold 代码和测试。
 - 更新 README、concepts、how-it-works 和 configuration，明确这是 breaking-change fork。
 - 用真实长 Session 运行 depth 1/2/3 对比，记录本地渲染 token 估算和树形状。
-- 最终运行全量测试/typecheck，并对大 Session 做手工 compact/ls/read/export smoke test。
+- 最终运行全量测试/typecheck，并对大 Session 做手工 compact/read/export smoke test。
 
 退出条件：代码中只有一个 memory truth 和一个 renderer；文档不再描述已删除的 Reflection/Drop 主流程。
 
@@ -1159,7 +1199,7 @@ V4 首版必须同时满足：
 |---|---|---|
 | Observer 的 Segment 阶段长期不产出，顶层 Observations 长期不归组 | 记忆仍完整；status 暴露树深度和各 depth 估算 | 真实 workload 中默认 depth 的渲染体积持续过大 |
 | Observer 过度归纳 | 历史区间判据、每 Segment 至少两 child、source 可追溯 | read 经常需要立刻展开且 summary 无法支持继续任务 |
-| Summary 丢失关键细节 | childIds 保留完整 subtree；memory_read 可展开 | 经常出现“必须展开才能避免错误决策” |
+| Summary 丢失关键细节 | childIds 保留完整 subtree；om_read 可展开 | 经常出现“必须展开才能避免错误决策” |
 | Observer model context 不够同时容纳 raw chunk 与 Root direct children | 失败不推进 coverage；Compact-forced run 失败则取消 Compact、保留 raw history | context failures 可复现且持续发生 |
 | Sub-agent Session 不可见 | 明确要求持久 child + 插件加载 | 目标 Sub-agent package 提供稳定 parent/child metadata contract |
 
@@ -1177,10 +1217,10 @@ V4 首版必须同时满足：
 7. TreeStore 重放该 event并运行完整树验证；Root 从 `O101` 升级为 Segment，旧历史变深而全部访问到的层级仍可显示。
 8. Pi 触发 Compact，即使 pending raw 尚未达到 observeAfterTokens，也强制运行一次 Observer。
 9. Compact 开始前先运行一次 Observer。它读取上次 Observer 之后新增的全部对话，并在一次模型调用中返回新的递归树增量；已有 Root Segment 通过同一 `id` 更新。成功后再执行 Compact；调用失败则终止本次 Compact并显示警告。
-10. 成功路径按 `memoryDepth=2` 从当前 Root preorder 渲染所有访问到的 Segment 和 Observation；直接返回 Pi preparation 给出的 `firstKeptEntryId` 管理 raw tail。
+10. 成功路径按 `memoryDepth=2` 从当前 Root 渲染所有访问到的 Segment 和 Observation：每个 Segment 先显示 summary 与 direct Observation 有序列表，再递归显示 child Segment 标题；直接返回 Pi preparation 给出的 `firstKeptEntryId` 管理 raw tail。
 11. 跨 Session discovery 对 Segment Root 读取 summary，对单 Observation Root 读取内容预览；后续 Inspector 可展示 Root 类型转换和 Segment revisions。
 12. 需要细节时：
-    memory_sessions → memory_ls → memory_read(S_fix) → memory_read(O102, includeSources=true)。
+    om_sessions → om_read(S_fix, depth=-1, includeSummary=true)。
 13. 需要周/月复盘时，对多个 exact Session ID 导出 JSONL，再用 shell/Python/Polars/DuckDB 分析。
 ```
 
