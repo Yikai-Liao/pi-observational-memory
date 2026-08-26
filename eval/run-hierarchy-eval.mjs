@@ -157,14 +157,26 @@ function evaluate(test, base, normalized) {
   check(rootObservations <= test.expect.maxRootObservations, `Root has ${rootObservations} direct Observations > ${test.expect.maxRootObservations}`);
   check(maxTreeDepth(tree) >= test.expect.minDepth, `tree depth ${maxTreeDepth(tree)} < ${test.expect.minDepth}`);
 
-  for (const expected of test.expect.segments) {
-    const ids = idsForRange(base.observations, expected.range);
-    const segment = [...tree.segmentsById.values()].find((item) => item.id !== root.id && JSON.stringify(descendants(tree, item)) === JSON.stringify(ids));
-    check(Boolean(segment), `missing exact Segment ${expected.range.join("..")}`);
+  for (const expected of test.expect.groups) {
+    const candidates = [...tree.segmentsById.values()]
+      .filter((item) => item.id !== root.id)
+      .map((item) => ({ item, ids: descendants(tree, item) }))
+      .filter(({ ids }) => expected.anchors.every((id) => ids.includes(id)) && (expected.forbidden ?? []).every((id) => !ids.includes(id)))
+      .sort((a, b) => a.ids.length - b.ids.length);
+    const segment = candidates[0]?.item;
+    check(Boolean(segment), `missing Segment containing anchors ${expected.anchors.join(", ")}`);
     const missing = segment ? includesTerms(segment.summary, expected.summaryTerms) : expected.summaryTerms;
     check(Boolean(segment) && missing.length === 0, segment ? `Segment ${segment.title} summary missing: ${missing.join(", ")}` : "missing Segment summary");
     check(Boolean(segment) && segment.summary.length >= expected.minSummaryChars, segment ? `Segment ${segment.title} summary too short: ${segment.summary.length} < ${expected.minSummaryChars}` : "missing Segment summary length");
   }
+  const density = test.expect.summaryDensity;
+  const sparse = [...tree.segmentsById.values()].filter((segment) => {
+    if (segment.id === root.id) return false;
+    const leaves = descendants(tree, segment).length;
+    const minimum = leaves >= density.minLeavesLarge ? density.minCharsLarge : leaves >= density.minLeaves ? density.minChars : 0;
+    return segment.summary.length < minimum;
+  });
+  check(sparse.length === 0, `sparse Segment summaries: ${sparse.map((item) => `${item.title}(${item.summary.length})`).join(", ")}`);
   return { failures, checks };
 }
 

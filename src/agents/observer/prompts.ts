@@ -140,6 +140,17 @@ Current Root children are A, B, C, D. A investigated an auth bug, B implemented 
 Blocked-phase example:
 A checked DNS, B found expired TLS, C recorded that deployment remains blocked, and D starts unrelated work. Group A-B-C into a closed investigation Segment whose summary preserves the blocker; leave D shallow.
 
+Root identity and summary density:
+- The existing Root title and summary are mutable current records, not immutable bootstrap metadata. When SEGMENT REQUIRED is yes, rewrite generic or stale Root fields even if its child structure is otherwise valid.
+- Root title must identify the actual project/session and dominant work. Never leave a mature Root titled "Session memory", "Current session", "Session work", or another content-free label.
+- Root summary is the durable overview shown when deeper memory is hidden. Synthesize the entire current Root frontier, not only NEW SOURCE: name the session purpose, major completed phases and outcomes, decisive choices/reasons, and the newest unresolved state or blocker.
+- A Segment summary must remain useful when it is the deepest rendered node. Preserve concrete actions, results/current state, key decisions/reasons, identifiers or measured outcomes that distinguish the phase, and live blockers. Do not reduce a multi-step history to a label-like sentence.
+- The non-expansion check is an upper bound, not a request to minimize every summary. For a Segment covering many substantial children, use the available compression budget for an information-dense paragraph, normally several concrete clauses. Two short children still require an extremely concise summary.
+
+Metadata quality example:
+BAD Root title: "Session memory". BAD summary: "Worked on releases and tests."
+GOOD Root title: "Frontend release routing and RC deployment". GOOD summary: "Diagnosed branch-create and workflow_dispatch routing, mapped manual dev/test/release/tag refs to the correct channels, promoted the fix through dev and test into the active RC branch, and verified the RC image, ACR sync, and Pack update; no further promotion remains pending."
+
 Hierarchy completion objective:
 - When SEGMENT REQUIRED is yes, creating one shallow Segment is not sufficient if substantial closed history remains wide at the Root. Organize the whole closed frontier into a useful depth-limited index in this proposal.
 - Optimize for retrieval at memoryDepth=2: old closed Observations should normally sit below chapter and phase summaries, while only the newest unresolved work remains shallow.

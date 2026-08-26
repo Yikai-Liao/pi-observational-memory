@@ -1,3 +1,4 @@
 round	prompt	cases_passed	checks_passed	status	note
-baseline	production@a2613d5	0/7	47/166	baseline	Shallow one-level grouping; all Root titles stayed generic and summaries were 22-42 chars.
-round1	hierarchy completion policy	0/7	54/166	keep	Added old-deep/new-shallow completion objective, chapter semantics, bounded Root frontier, and a concrete multi-level example; improved 7 fixed checks.
+baseline	production@a2613d5	0/7	77/149	baseline	Finalized semantic-anchor oracle: shallow one-level grouping; all Root titles stayed generic and summaries were 22-42 chars.
+round1	hierarchy completion policy	0/7	74/149	keep-shape	Fixed-score delta -3, but produced depth 3-4 in four cases; retained because the user-selected objective is old-deep/new-shallow hierarchy, not score alone.
+round2	Root identity and summary density	0/7	105/149	keep	Generic Root titles were corrected in 6/7 cases, Root summaries grew to 187-448 chars, and four cases reached depth 3-4; +28 fixed checks over baseline.
