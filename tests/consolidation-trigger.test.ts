@@ -86,11 +86,12 @@ describe("single Observer pipeline", () => {
 		const b = { id: "bbbbbbbbbbbb", content: "A second durable observation describing implementation work and its verified result.", sourceEntryIds: ["raw-b"] };
 		const root = { id: "s_111111111111" as const, title: "Completed work", summary: "Summarized completed work.", childIds: [a.id, b.id] };
 		const memory: Entry = { type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: { version: 1, nodeRecords: [a, b, root], coversUpToId: "raw-b", segmentCheck: "complete" } };
-		const huge = `HEAD-${"x".repeat(5000)}-TAIL`;
+		const huge = `HEAD-${"x".repeat(2500)}-MIDDLE-MARKER-${"x".repeat(2500)}-TAIL`;
 		const state = setup([raw("raw-a", "a"), raw("raw-b", "b"), memory, raw("raw-c", huge)]);
 		state.runtime.config = { ...state.runtime.config, observerChunkMaxTokens: 256 };
 		runObserver.mockImplementationOnce(async ({ tree, chunk, segmentRequired }) => {
-			expect(chunk).toContain("TAIL");
+			expect(chunk).toContain("MIDDLE-MARKER");
+			expect(chunk).not.toContain("middle omitted");
 			expect(segmentRequired).toBe(true);
 			return { tree: { type: "segment", id: tree.root.id, title: tree.root.title, summary: tree.root.summary, children: tree.root.childIds.map((id: string) => ({ type: "ref", id })) } };
 		});

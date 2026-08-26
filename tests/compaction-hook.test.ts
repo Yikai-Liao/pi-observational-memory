@@ -41,7 +41,10 @@ describe("Segment Memory compaction hook", () => {
 		const state = setup(validEntries());
 		runObserverOnce.mockResolvedValue({ appended: false, warnings: [] });
 		const result = await state.hook(state.event, state.ctx);
-		expect(runObserverOnce).toHaveBeenCalledOnce();
+		expect(runObserverOnce).toHaveBeenCalledWith(expect.anything(), state.runtime, state.ctx, {
+			forced: true,
+			signal: state.event.signal,
+		});
 		expect(result.compaction.firstKeptEntryId).toBe("raw-b");
 		expect(result.compaction.summary).toContain("# [s_111111111111] Architecture implementation");
 		expect(result.compaction.summary).toContain("[aaaaaaaaaaaa]");

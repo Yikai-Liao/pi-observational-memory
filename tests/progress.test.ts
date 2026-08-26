@@ -16,6 +16,6 @@ describe("V4 observation coverage", () => {
 		];
 		expect(latestObservationCoverageIndex(entries)).toBe(0);
 		expect(sourceEntriesAfterCoverage(entries).map((entry) => entry.id)).toEqual(["raw-b", "raw-c"]);
-		expect(rawTokensSinceObservationCoverage(entries)).toBeGreaterThan(0);
+		expect(rawTokensSinceObservationCoverage(entries)).toBe(6); // raw-b + raw-c
 	});
 });

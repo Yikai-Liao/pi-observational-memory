@@ -27,6 +27,7 @@ describe("runObserver", () => {
 		let config: any;
 		const loop = fakeAgentLoop(async (_prompts, context, seenConfig) => {
 			config = seenConfig;
+			expect(config.shouldStopAfterTurn()).toBe(false);
 			await context.tools[0].execute("tool", { tree: { type: "observation", content: "User requested Segment Memory implementation.", sourceEntryIds: ["entry-a"] } });
 		});
 		const result = await runObserver({ ...args, agentLoop: loop });

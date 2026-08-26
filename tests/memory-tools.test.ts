@@ -10,18 +10,18 @@ import { SessionCatalog } from "../src/sessions/catalog.js";
 import { normalizeOmReadArguments, registerOmReadTool } from "../src/tools/om-read.js";
 import { normalizeOmSessionsArguments, registerOmSessionsTool } from "../src/tools/om-sessions.js";
 
-const entries = (): Entry[] => {
+const entries = (summary = "Located and fixed the release issue."): Entry[] => {
 	const a = { id: "aaaaaaaaaaaa", content: "Investigated the detailed release issue and located the durable root cause.", sourceEntryIds: ["raw-a"] };
 	const b = { id: "bbbbbbbbbbbb", content: "Implemented the detailed release repair and verified its durable behavior.", sourceEntryIds: ["raw-b"] };
-	const root = { id: "s_111111111111", title: "Release repair", summary: "Located and fixed the release issue.", childIds: [a.id, b.id] };
+	const root = { id: "s_111111111111", title: "Release repair", summary, childIds: [a.id, b.id] };
 	return [
 		{ type: "message", id: "raw-a" }, { type: "message", id: "raw-b" },
 		{ type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: { version: 1, nodeRecords: [a, b, root], coversUpToId: "raw-b", segmentCheck: "complete" } },
 	];
 };
 
-function manager() {
-	return { getBranch: () => entries(), getSessionName: () => "Release", getSessionId: () => "session-a" };
+function manager(summary?: string, sessionId = "session-a") {
+	return { getBranch: () => entries(summary), getSessionName: () => "Release", getSessionId: () => sessionId };
 }
 
 describe("memory inspection and export", () => {
@@ -49,9 +49,15 @@ describe("SessionCatalog", () => {
 			path: "/sessions/a.jsonl", id: "session-a", cwd: "/work/project", name: "Release",
 			created: new Date("2026-01-01"), modified: new Date("2026-01-02"), messageCount: 2, firstMessage: "", allMessagesText: "",
 		};
-		const api = { listAll: vi.fn(async () => [info]), open: vi.fn(() => manager()) } as any;
+		const partial = { ...info, path: "/sessions/partial.jsonl", id: "session-partial" };
+		const api = {
+			listAll: vi.fn(async () => [partial, info]),
+			open: vi.fn((path: string) => path === partial.path
+				? manager("Release issue remains under investigation.", partial.id)
+				: manager()),
+		} as any;
 		const catalog = new SessionCatalog(api);
-		await expect(catalog.list("/work", ["release", "fixed"])).resolves.toHaveLength(1);
+		await expect(catalog.list("/work", ["release", "fixed"])).resolves.toMatchObject([{ sessionId: "session-a" }]);
 		await expect(catalog.list("/work/pro", [])).resolves.toHaveLength(0);
 		await expect(catalog.locate("session-a")).resolves.toMatchObject({ info });
 	});
