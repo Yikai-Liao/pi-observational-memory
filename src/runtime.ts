@@ -286,18 +286,21 @@ export class Runtime {
 		this.sessionAbort.abort();
 		this.sessionAbort = new AbortController();
 		this.sessionId = sessionId;
+		this.observerEmptyBackoff = undefined;
 		this.branchGeneration++;
 	}
 
 	invalidateBranch(): void {
 		this.sessionAbort.abort();
 		this.sessionAbort = new AbortController();
+		this.observerEmptyBackoff = undefined;
 		this.branchGeneration++;
 	}
 
 	shutdownSession(): void {
 		this.sessionAbort.abort();
 		this.sessionId = undefined;
+		this.observerEmptyBackoff = undefined;
 		this.branchGeneration++;
 	}
 

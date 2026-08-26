@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULTS } from "../src/config.js";
-import { runObserverOnce } from "../src/hooks/consolidation-trigger.js";
+import { registerConsolidationTrigger, runObserverOnce } from "../src/hooks/consolidation-trigger.js";
 import { MemoryTreeStore } from "../src/memory-tree/store.js";
 import { OM_OBSERVATIONS_RECORDED, type Entry } from "../src/memory-tree/types.js";
 import { Runtime } from "../src/runtime.js";
@@ -11,10 +11,14 @@ vi.mock("../src/agents/observer/agent.js", () => ({ runObserver: (...args: unkno
 function setup(initial: Entry[] = []) {
 	let entries = [...initial];
 	const appended: Array<{ customType: string; data: any }> = [];
+	const handlers = new Map<string, (event: unknown, ctx: any) => unknown>();
 	const pi = {
 		appendEntry(customType: string, data: any) {
 			appended.push({ customType, data });
 			entries.push({ type: "custom", id: `event-${appended.length}`, customType, data });
+		},
+		on(event: string, handler: (event: unknown, ctx: any) => unknown) {
+			handlers.set(event, handler);
 		},
 	} as any;
 	const ctx = {
@@ -28,7 +32,15 @@ function setup(initial: Entry[] = []) {
 	runtime.config = { ...DEFAULTS, segmentEveryObserverRuns: 2 };
 	runtime.configLoaded = true;
 	runtime.beginSession("session-a");
-	return { pi, ctx, runtime, appended, entries: () => entries, setEntries: (value: Entry[]) => { entries = value; } };
+	return {
+		pi,
+		ctx,
+		runtime,
+		appended,
+		entries: () => entries,
+		setEntries: (value: Entry[]) => { entries = value; },
+		emit: (event: string) => handlers.get(event)?.({}, ctx),
+	};
 }
 
 const raw = (id: string, text: string): Entry => ({ type: "message", id, message: { role: "user", content: [{ type: "text", text }] } });
@@ -85,6 +97,37 @@ describe("single Observer pipeline", () => {
 		await runObserverOnce(state.pi, state.runtime, state.ctx, { forced: true });
 		expect(state.appended[0]?.data.segmentCheck).toBe("complete");
 		expect(state.appended[0]?.data.coversUpToId).toBeUndefined();
+	});
+
+	it("backs off after an empty run until another threshold of source arrives, but not during forced compaction", async () => {
+		const state = setup([raw("raw-1", "x".repeat(1000))]);
+		state.runtime.config = { ...state.runtime.config, observeAfterTokens: 10 };
+		registerConsolidationTrigger(state.pi, state.runtime);
+		runObserver.mockResolvedValue({ tree: null });
+
+		state.emit("turn_end");
+		await vi.waitFor(() => expect(runObserver).toHaveBeenCalledTimes(1));
+		await vi.waitFor(() => expect(state.runtime.consolidationInFlight).toBe(false));
+		expect(state.runtime.observerEmptyBackoff).toMatchObject({ sessionIdentity: "session-a", coverageId: undefined });
+
+		state.emit("turn_end");
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(runObserver).toHaveBeenCalledTimes(1);
+
+		await runObserverOnce(state.pi, state.runtime, state.ctx, { forced: true });
+		expect(runObserver).toHaveBeenCalledTimes(2);
+
+		state.setEntries([...state.entries(), raw("raw-2", "small")]);
+		state.emit("turn_end");
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(runObserver).toHaveBeenCalledTimes(2);
+
+		state.setEntries([...state.entries(), raw("raw-3", "y".repeat(1000))]);
+		runObserver.mockResolvedValueOnce({ tree: { type: "observation", content: "A durable new requirement arrived after the empty batch.", sourceEntryIds: ["raw-3"] } });
+		state.emit("turn_end");
+		await vi.waitFor(() => expect(runObserver).toHaveBeenCalledTimes(3));
+		await vi.waitFor(() => expect(state.runtime.consolidationInFlight).toBe(false));
+		expect(state.runtime.observerEmptyBackoff).toBeUndefined();
 	});
 
 	it("does not append after branch generation changes during the model call", async () => {

@@ -82,7 +82,7 @@ Settings live under `observational-memory` in `~/.pi/agent/settings.json` or pro
 
 | Setting | Default | Meaning |
 |---|---:|---|
-| `observeAfterTokens` | `10000` | Estimated pending source tokens before a background Observer run. |
+| `observeAfterTokens` | `10000` | Pending source tokens before a background run, and additional growth before retrying a successful empty run. |
 | `observerChunkMaxTokens` | derived | Background-only source cap: 20% of model context, fallback `60000`, minimum `256`. |
 | `segmentEveryObserverRuns` | `2` | Successful non-empty Observation batches between Segment checks. |
 | `compactAfterTokens` | `81000` | Proactive compaction source-token threshold. |

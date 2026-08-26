@@ -55,10 +55,27 @@ function currentContextTokens(ctx: ObserverCtx): number | undefined {
 	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-function observationDue(entries: Entry[], runtime: Runtime, ctx: ObserverCtx): boolean {
+function observationProgressTokens(entries: Entry[], ctx: ObserverCtx): number {
 	const current = currentContextTokens(ctx);
 	const real = current === undefined ? undefined : realTokensSinceObservationAnchor(entries, current);
-	return (real ?? rawTokensSinceObservationCoverage(entries)) >= runtime.config.observeAfterTokens;
+	return real ?? rawTokensSinceObservationCoverage(entries);
+}
+
+function observationDue(entries: Entry[], runtime: Runtime, ctx: ObserverCtx): boolean {
+	const tokens = observationProgressTokens(entries, ctx);
+	if (tokens < runtime.config.observeAfterTokens) return false;
+	const backoff = runtime.observerEmptyBackoff;
+	if (!backoff) return true;
+	if (
+		sessionId(ctx) !== backoff.sessionIdentity
+		|| latestObservationCoverageId(entries) !== backoff.coverageId
+		|| tokens >= backoff.tokensAtEmpty + runtime.config.observeAfterTokens
+	) {
+		runtime.observerEmptyBackoff = undefined;
+		return true;
+	}
+	debugLog("observer.empty_backoff", { tokens, resumeAtTokens: backoff.tokensAtEmpty + runtime.config.observeAfterTokens });
+	return false;
 }
 
 async function resolveObserverModel(runtime: Runtime, ctx: ObserverCtx): Promise<ResolvedModel> {
@@ -86,6 +103,8 @@ export async function runObserverOnce(
 
 		const initialEntries = ctx.sessionManager.getBranch() as Entry[];
 		const initialTree = store.rebuild(initialEntries);
+		const initialCoverageId = latestObservationCoverageId(initialEntries);
+		const initialTokens = observationProgressTokens(initialEntries, ctx);
 		const pending = sourceEntriesAfterCoverage(initialEntries);
 		if (pending.length === 0 && !options.forced) return { tree: initialTree, appended: false, warnings: [] };
 		if (pending.length === 0 && !initialTree.root) return { tree: initialTree, appended: false, warnings: [] };
@@ -138,6 +157,13 @@ export async function runObserverOnce(
 		});
 		if (output.tree && !normalized.data) throw new Error(`Observer proposal rejected: ${normalized.warnings.join("; ") || "invalid tree"}`);
 		for (const warning of normalized.warnings) notify(runtime, ctx, `Observational memory: ${warning}`, "warning");
+		const recordedObservation = normalized.data?.nodeRecords.some((record) => !("childIds" in record)) ?? false;
+		if (recordedObservation) runtime.observerEmptyBackoff = undefined;
+		else if (!options.forced) runtime.observerEmptyBackoff = {
+			sessionIdentity: expectedSessionId,
+			coverageId: initialCoverageId,
+			tokensAtEmpty: initialTokens,
+		};
 		if (!normalized.data) {
 			debugLog("observer.empty", { forced: options.forced, coversUpToId });
 			return { tree: currentTree, appended: false, warnings: normalized.warnings };

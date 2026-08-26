@@ -65,7 +65,7 @@ The trigger compares pending source growth against this threshold. It prefers pr
 
 Lower values reduce each batch size but make more model calls. Higher values reduce call frequency but leave more source pending.
 
-A model success with no new Observation does not advance coverage. A model/API failure also leaves coverage unchanged.
+A successful ordinary run with no new Observation writes no empty event and does not advance coverage. It retries only after another `observeAfterTokens` of source growth; forced compaction bypasses this in-memory backoff. Model/API failures do not activate the backoff and leave coverage unchanged.
 
 ### `observerChunkMaxTokens`
 

@@ -14,7 +14,7 @@ describe("/om:status", () => {
 	it("reports tree, cadence, rendering, and validation", async () => {
 		let handler: any;
 		const pi = { registerCommand: vi.fn((_name, command) => { handler = command.handler; }) } as any;
-		const runtime = { configLoaded: true, config: DEFAULTS, ensureConfig: vi.fn(), consolidationInFlight: false } as any;
+		const runtime = { configLoaded: true, config: DEFAULTS, ensureConfig: vi.fn(), consolidationInFlight: false, observerEmptyBackoff: { tokensAtEmpty: 12_000 } } as any;
 		registerStatusCommand(pi, runtime);
 		const notify = vi.fn();
 		await handler("", { cwd: "/project", model: { contextWindow: 100_000 }, sessionManager: { getBranch: memoryEntries }, ui: { notify } });
@@ -23,6 +23,7 @@ describe("/om:status", () => {
 		expect(output).toContain("Segments: 1");
 		expect(output).toContain("Render depth: 2");
 		expect(output).toContain("Next segmentation: 0 / 2");
+		expect(output).toContain("Observer retry backoff: active");
 		expect(output).toContain("Tree validation: valid");
 	});
 

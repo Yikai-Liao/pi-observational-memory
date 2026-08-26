@@ -45,6 +45,7 @@ export function registerStatusCommand(pi: ExtensionAPI, runtime: Runtime): void 
 				`Next segmentation: ${tree.observationBatchesSinceSegmentation} / ${runtime.config.segmentEveryObserverRuns} successful Observer batches`,
 				`Next compaction: ~${compactionProgress.toLocaleString()} / ${threshold.toLocaleString()} estimated source tokens (${pct(compactionProgress, threshold)}%)`,
 				`Observer: ${runtime.consolidationInFlight ? "running" : "idle"}`,
+				`Observer retry backoff: ${runtime.observerEmptyBackoff ? `active (waiting for ~${runtime.config.observeAfterTokens.toLocaleString()} more tokens or forced compaction)` : "inactive"}`,
 				`Last observer error: ${runtime.lastObserverError ?? "none"}`,
 				"",
 				"── Diagnostics ──",
