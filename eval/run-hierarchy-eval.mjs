@@ -22,6 +22,9 @@ const sessions = JSON.parse(await readFile(new URL("./real-session-hierarchy-obs
 const systemPrompt = process.env.EVAL_PROMPT_FILE
   ? await readFile(process.env.EVAL_PROMPT_FILE, "utf8")
   : OBSERVER_SYSTEM;
+const replay = process.env.EVAL_REPLAY_REPORT
+  ? new Map(JSON.parse(await readFile(process.env.EVAL_REPLAY_REPORT, "utf8")).results.map((item) => [item.name, item]))
+  : undefined;
 
 function idsForRange(observations, [from, to]) {
   const start = observations.findIndex((item) => item.id === from);
@@ -158,17 +161,18 @@ function evaluate(test, base, normalized) {
     const ids = idsForRange(base.observations, expected.range);
     const segment = [...tree.segmentsById.values()].find((item) => item.id !== root.id && JSON.stringify(descendants(tree, item)) === JSON.stringify(ids));
     check(Boolean(segment), `missing exact Segment ${expected.range.join("..")}`);
-    if (!segment) continue;
-    const missing = includesTerms(segment.summary, expected.summaryTerms);
-    check(missing.length === 0, `Segment ${segment.title} summary missing: ${missing.join(", ")}`);
-    check(segment.summary.length >= expected.minSummaryChars, `Segment ${segment.title} summary too short: ${segment.summary.length} < ${expected.minSummaryChars}`);
+    const missing = segment ? includesTerms(segment.summary, expected.summaryTerms) : expected.summaryTerms;
+    check(Boolean(segment) && missing.length === 0, segment ? `Segment ${segment.title} summary missing: ${missing.join(", ")}` : "missing Segment summary");
+    check(Boolean(segment) && segment.summary.length >= expected.minSummaryChars, segment ? `Segment ${segment.title} summary too short: ${segment.summary.length} < ${expected.minSummaryChars}` : "missing Segment summary length");
   }
   return { failures, checks };
 }
 
 async function run(test) {
   const base = buildInput(test);
-  const response = await callModel(test, base.tree);
+  const response = replay?.has(test.name)
+    ? { proposal: replay.get(test.name).proposal, usage: replay.get(test.name).usage ?? {} }
+    : await callModel(test, base.tree);
   let counter = 0;
   const normalized = applyObserverProposal(base.tree, response.proposal, base.entries, {
     allowedSourceEntryIds: [],
@@ -233,7 +237,7 @@ const results = await mapLimit(fixture.cases, 3, async (test) => {
 const report = {
   model,
   reasoning,
-  prompt: process.env.EVAL_PROMPT_FILE ?? "production",
+  prompt: process.env.EVAL_PROMPT_FILE ?? (process.env.EVAL_REPLAY_REPORT ? `replay:${process.env.EVAL_REPLAY_REPORT}` : "production"),
   casesPassed: results.filter((item) => item.passed).length,
   casesTotal: results.length,
   checksPassed: results.reduce((sum, item) => sum + item.checksPassed, 0),

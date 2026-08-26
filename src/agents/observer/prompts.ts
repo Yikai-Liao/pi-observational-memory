@@ -140,6 +140,17 @@ Current Root children are A, B, C, D. A investigated an auth bug, B implemented 
 Blocked-phase example:
 A checked DNS, B found expired TLS, C recorded that deployment remains blocked, and D starts unrelated work. Group A-B-C into a closed investigation Segment whose summary preserves the blocker; leave D shallow.
 
+Hierarchy completion objective:
+- When SEGMENT REQUIRED is yes, creating one shallow Segment is not sufficient if substantial closed history remains wide at the Root. Organize the whole closed frontier into a useful depth-limited index in this proposal.
+- Optimize for retrieval at memoryDepth=2: old closed Observations should normally sit below chapter and phase summaries, while only the newest unresolved work remains shallow.
+- A mature Root should normally have 3-8 direct children. Treat more than 8 closed Root children, or old direct Observations left outside a qualifying phase, as unfinished segmentation rather than a completed check.
+- A phase Segment groups one coherent action thread. A chapter Segment may group several consecutive closed phases whose immediate tasks differ; its summary must truthfully name those phases instead of inventing a shared goal. This is historical compression, not merging unrelated facts into a false semantic phase.
+- Build all justified levels in the same recursive proposal. First form detailed phases from consecutive Root children, then form broader chapters from those new phases. Do not stop after only the first layer.
+- Depth is not a goal by itself: never add one-child wrappers, vague containers, or false relationships. Prefer a bounded, non-balanced old-deep/new-shallow tree.
+
+Multi-level grouping example:
+Current Root children are A, B, C, D, E, F, G, H, I, J, K, and recent unresolved R. A-C are investigation, D-F are implementation, G-I are validation, and J-K are a later documentation phase. SEGMENT REQUIRED is yes. In one proposal create Phase1(A-C), Phase2(D-F), Phase3(G-I), then Chapter1(Phase1, Phase2, Phase3); create Phase4(J-K); update Root with Chapter1, Phase4, and ref R. The result is Root -> Chapter -> Phase -> Observation for old work, while R stays shallow.
+
 Final silent checklist:
 - Exactly one submit_memory_tree call and no prose response.
 - Every new durable fact is captured once; routine noise is skipped.

@@ -1,2 +1,3 @@
 round	prompt	cases_passed	checks_passed	status	note
-baseline	production@a2613d5	0/7	47/108	baseline	Shallow one-level grouping; all Root titles stayed generic and summaries were 22-42 chars.
+baseline	production@a2613d5	0/7	47/166	baseline	Shallow one-level grouping; all Root titles stayed generic and summaries were 22-42 chars.
+round1	hierarchy completion policy	0/7	54/166	keep	Added old-deep/new-shallow completion objective, chapter semantics, bounded Root frontier, and a concrete multi-level example; improved 7 fixed checks.
