@@ -1,74 +1,42 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { Runtime } from "../runtime.js";
 import { copyTextToClipboard } from "../clipboard.js";
-import {
-	fullProjection,
-	observationToSummaryLine,
-	reflectionToSummaryLine,
-	visibleProjection,
-	type Entry,
-	type Projection,
-} from "../session-ledger/index.js";
+import { maxTreeDepth, renderMemoryTree } from "../memory-tree/render.js";
+import { MemoryTreeStore } from "../memory-tree/store.js";
+import type { Entry } from "../memory-tree/types.js";
+import type { Runtime } from "../runtime.js";
 
-function firstArg(args: unknown): string | undefined {
+function modeFrom(args: unknown): string | undefined {
+	if (typeof args === "string") return args.trim().split(/\s+/)[0] || undefined;
 	if (Array.isArray(args)) return typeof args[0] === "string" ? args[0] : undefined;
-	if (typeof args === "string") return args.trim().split(/\s+/)[0];
-	if (args && typeof args === "object" && "mode" in args) {
-		const mode = (args as { mode?: unknown }).mode;
-		return typeof mode === "string" ? mode : undefined;
-	}
 	return undefined;
 }
 
-function renderList<T>(items: T[], render: (item: T) => string, empty: string): string {
-	return items.length > 0 ? items.map(render).join("\n") : empty;
-}
-
-function renderContentOnlyProjection(projection: Projection, emptyScope: "visible" | "recorded"): string {
-	return [
-		"── Reflections ──",
-		renderList(projection.reflections, reflectionToSummaryLine, `No ${emptyScope} reflections.`),
-		"",
-		"── Observations ──",
-		renderList(projection.observations, observationToSummaryLine, `No ${emptyScope} observations.`),
-	].join("\n");
-}
-
-interface ViewCommandOptions {
-	copyToClipboard?: (text: string) => Promise<boolean>;
-}
-
-export function registerViewCommand(pi: ExtensionAPI, runtime: Runtime, options: ViewCommandOptions = {}): void {
-	const copyToClipboard = options.copyToClipboard ?? copyTextToClipboard;
-
+export function registerViewCommand(
+	pi: ExtensionAPI,
+	runtime: Runtime,
+	options: { copyToClipboard?: (text: string) => Promise<boolean> } = {},
+): void {
+	const copy = options.copyToClipboard ?? copyTextToClipboard;
 	pi.registerCommand("om:view", {
-		description: "Print and copy observational memory content (visible by default, full for recorded memory)",
+		description: "Print and copy the visible Segment Memory Tree; use current for the full tree",
 		handler: async (args, ctx) => {
 			runtime.ensureConfig(ctx.cwd);
-			const entries = ctx.sessionManager.getBranch() as Entry[];
-			const mode = firstArg(args);
-
-			const notifyWithCopy = async (output: string) => {
-				const copied = await copyToClipboard(output).catch(() => false);
-				ctx.ui.notify(
-					copied
-						? `${output}\n\nCopied /om:view output to clipboard.`
-						: `${output}\n\nWarning: failed to copy /om:view output to clipboard.`,
-					"info",
-				);
-			};
-
-			if (mode === "full") {
-				await notifyWithCopy(renderContentOnlyProjection(fullProjection(entries), "recorded"));
+			const mode = modeFrom(args) ?? "visible";
+			if (mode !== "visible" && mode !== "current") {
+				ctx.ui.notify("Usage: /om:view [visible|current]", "info");
 				return;
 			}
-
-			if (mode && mode !== "visible") {
-				ctx.ui.notify("Usage: /om:view [full]", "info");
+			let tree;
+			try {
+				tree = new MemoryTreeStore().rebuild(ctx.sessionManager.getBranch() as Entry[]);
+			} catch (error) {
+				ctx.ui.notify(`Memory tree unavailable: ${error instanceof Error ? error.message : String(error)}`, "warning");
 				return;
 			}
-
-			await notifyWithCopy(renderContentOnlyProjection(visibleProjection(entries), "visible"));
+			const depth = mode === "current" ? maxTreeDepth(tree) : runtime.config.memoryDepth;
+			const output = renderMemoryTree(tree, depth).markdown || "No Segment Memory has been recorded yet.";
+			const copied = await copy(output).catch(() => false);
+			ctx.ui.notify(`${output}\n\n${copied ? "Copied /om:view output to clipboard." : "Warning: failed to copy /om:view output to clipboard."}`, "info");
 		},
 	});
 }

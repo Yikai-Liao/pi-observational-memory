@@ -9,7 +9,7 @@ function modelRegistry(args: { found?: unknown; auth?: unknown } = {}) {
 	};
 }
 
-describe("Runtime V3 behavior", () => {
+describe("Runtime V4 behavior", () => {
 	it("uses configured model when present", async () => {
 		const runtime = new Runtime();
 		const configured = { provider: "anthropic", id: "configured" };
@@ -136,20 +136,29 @@ describe("Runtime V3 behavior", () => {
 		expect(runtime.consolidationPhase).toBeUndefined();
 	});
 
-	it("records stage-specific consolidation errors", () => {
+	it("records Observer errors", () => {
 		const runtime = new Runtime();
 		const notify = vi.fn();
-
 		expect(runtime.recordConsolidationStageError({ hasUI: true, ui: { notify } }, "observer", new Error("observe failed"))).toBe("observe failed");
-		expect(runtime.recordConsolidationStageError({ hasUI: true, ui: { notify } }, "reflector", new Error("reflect failed"))).toBe("reflect failed");
-		expect(runtime.recordConsolidationStageError({ hasUI: true, ui: { notify } }, "dropper", "drop failed")).toBe("drop failed");
-
 		expect(runtime.lastObserverError).toBe("observe failed");
-		expect(runtime.lastReflectorError).toBe("reflect failed");
-		expect(runtime.lastDropperError).toBe("drop failed");
 		expect(notify).toHaveBeenCalledWith("Observational memory: observer failed: observe failed", "warning");
-		expect(notify).toHaveBeenCalledWith("Observational memory: reflector failed: reflect failed", "warning");
-		expect(notify).toHaveBeenCalledWith("Observational memory: dropper failed: drop failed", "warning");
+	});
+
+	it("serializes Observer work and invalidates branch work", async () => {
+		const runtime = new Runtime();
+		runtime.beginSession("session-a");
+		const order: string[] = [];
+		let release!: () => void;
+		const first = runtime.enqueueObserver(async () => { order.push("first-start"); await new Promise<void>((resolve) => { release = resolve; }); order.push("first-end"); });
+		const second = runtime.enqueueObserver(async () => { order.push("second"); });
+		await vi.waitFor(() => expect(order).toEqual(["first-start"]));
+		release();
+		await Promise.all([first, second]);
+		expect(order).toEqual(["first-start", "first-end", "second"]);
+		const generation = runtime.branchGeneration;
+		runtime.invalidateBranch();
+		expect(runtime.branchGeneration).toBe(generation + 1);
+		expect(runtime.sessionAbort.signal.aborted).toBe(false);
 	});
 
 	it("keeps compaction flags independent", () => {

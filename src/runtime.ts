@@ -50,7 +50,7 @@ const AVAILABILITY_RECHECK_REARM_MS = 60_000;
 
 type NotifyLevel = "warning" | "info" | "error";
 type Notify = (message: string, type?: NotifyLevel) => void;
-export type ConsolidationPhase = "observer" | "reflector" | "dropper";
+export type ConsolidationPhase = "observer";
 
 /**
  * Whether pi positively reports a working credential source for this model's provider.
@@ -106,8 +106,10 @@ export class Runtime {
 	compactHookInFlight = false;
 	resolveFailureNotified = false;
 	lastObserverError: string | undefined;
-	lastReflectorError: string | undefined;
-	lastDropperError: string | undefined;
+	sessionId: string | undefined;
+	branchGeneration = 0;
+	sessionAbort = new AbortController();
+	private observerQueue: Promise<void> = Promise.resolve();
 	/** provider -> epoch ms of the last availability re-check (see `recheckProviderCredential`). */
 	availabilityRecheckedAt = new Map<string, number>();
 	/** Deliberate-empty backoff (#23): skip observer re-fires over the same span until enough new tokens arrive. */
@@ -280,12 +282,35 @@ export class Runtime {
 		return recovered;
 	}
 
+	beginSession(sessionId: string | undefined): void {
+		this.sessionAbort.abort();
+		this.sessionAbort = new AbortController();
+		this.sessionId = sessionId;
+		this.branchGeneration++;
+	}
+
+	invalidateBranch(): void {
+		this.sessionAbort.abort();
+		this.sessionAbort = new AbortController();
+		this.branchGeneration++;
+	}
+
+	shutdownSession(): void {
+		this.sessionAbort.abort();
+		this.sessionId = undefined;
+		this.branchGeneration++;
+	}
+
+	enqueueObserver<T>(work: () => Promise<T>): Promise<T> {
+		const result = this.observerQueue.then(work, work);
+		this.observerQueue = result.then(() => undefined, () => undefined);
+		return result;
+	}
+
 	launchConsolidationTask(ctx: LaunchCtx, work: () => Promise<void>): Promise<void> {
 		this.consolidationInFlight = true;
-		this.consolidationPhase = undefined;
+		this.consolidationPhase = "observer";
 		this.lastObserverError = undefined;
-		this.lastReflectorError = undefined;
-		this.lastDropperError = undefined;
 		const promise = this.launchTrackedTask(ctx, "consolidation", work, () => {
 			this.consolidationInFlight = false;
 			this.consolidationPhase = undefined;
@@ -295,12 +320,10 @@ export class Runtime {
 		return promise;
 	}
 
-	recordConsolidationStageError(ctx: LaunchCtx, phase: ConsolidationPhase, error: unknown): string {
+	recordConsolidationStageError(ctx: LaunchCtx, _phase: ConsolidationPhase, error: unknown): string {
 		const message = error instanceof Error ? error.message : String(error);
-		if (phase === "observer") this.lastObserverError = message;
-		if (phase === "reflector") this.lastReflectorError = message;
-		if (phase === "dropper") this.lastDropperError = message;
-		if (ctx.hasUI && ctx.ui) ctx.ui.notify(`Observational memory: ${phase} failed: ${message}`, "warning");
+		this.lastObserverError = message;
+		if (ctx.hasUI && ctx.ui) ctx.ui.notify(`Observational memory: observer failed: ${message}`, "warning");
 		return message;
 	}
 

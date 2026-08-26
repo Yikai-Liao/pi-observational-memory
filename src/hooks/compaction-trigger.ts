@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolveCompactAfterTokens } from "../config.js";
-import { rawTokensSinceLastCompaction, type Entry } from "../session-ledger/index.js";
+import type { Entry } from "../memory-tree/types.js";
+import { rawTokensSinceLastCompaction } from "../progress.js";
 import type { Runtime } from "../runtime.js";
 
 export function registerCompactionTrigger(pi: ExtensionAPI, runtime: Runtime): void {

@@ -2,231 +2,129 @@ import { agentLoop, type AgentContext, type AgentLoopConfig, type AgentTool } fr
 import type { Message, Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { Type } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
-import type { Static } from "typebox";
-import { hashId } from "../../ids.js";
-import { logAgentStreamError } from "../stream-errors.js";
 import { AGENT_LOOP_MAX_TOKENS, boundedMaxTokens } from "../../model-budget.js";
+import { isObservation, isSegment, type MemoryTree, type NodeProposal, type ObserverOutput } from "../../memory-tree/types.js";
+import { logAgentStreamError } from "../stream-errors.js";
 import { OBSERVER_SYSTEM } from "./prompts.js";
-import { nowTimestamp, truncateRecordContent } from "../../serialize.js";
-import type { Observation, Relevance } from "../../session-ledger/index.js";
-import { observationLineTokenCount } from "../../tokens.js";
 
-interface RunObserverArgs {
+export interface RunObserverArgs {
 	model: Model<any>;
 	apiKey?: string;
 	headers?: Record<string, string>;
 	env?: Record<string, string>;
-	priorReflections: string[];
-	priorObservations: string[];
+	baseUrl?: string;
+	tree: MemoryTree;
 	chunk: string;
-	allowedSourceEntryIds: string[];
+	segmentRequired: boolean;
+	successfulBatches: number;
 	signal?: AbortSignal;
 	agentLoop?: typeof agentLoop;
-	maxTurns?: number;
 	thinkingLevel?: ModelThinkingLevel;
 }
 
-const RelevanceSchema = Type.Union([
-	Type.Literal("low"),
-	Type.Literal("medium"),
-	Type.Literal("high"),
-	Type.Literal("critical"),
+const NodeProposalSchema = Type.Union([
+	Type.Object({ type: Type.Literal("ref"), id: Type.String({ minLength: 1 }) }),
+	Type.Object({
+		type: Type.Literal("observation"),
+		content: Type.String({ minLength: 1 }),
+		sourceEntryIds: Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }),
+	}),
+	Type.Object({
+		type: Type.Literal("segment"),
+		id: Type.Optional(Type.String({ pattern: "^s_[a-f0-9]{12}$" })),
+		title: Type.String({ minLength: 1, maxLength: 120 }),
+		summary: Type.String({ minLength: 1, maxLength: 2000 }),
+		children: Type.Array(Type.Any(), { description: "Recursive NodeProposal children using the same ref/observation/segment shapes." }),
+	}),
 ]);
 
-export const OBSERVATION_TIMESTAMP_PATTERN = "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}$";
+const SubmitTreeSchema = Type.Object({ tree: Type.Union([NodeProposalSchema, Type.Null()]) });
 
-const RecordObservationsSchema = Type.Object({
-	observations: Type.Array(
-		Type.Object({
-			timestamp: Type.String({
-				pattern: OBSERVATION_TIMESTAMP_PATTERN,
-				description: "Observation time in local 'YYYY-MM-DD HH:MM' format.",
-			}),
-			content: Type.String({
-				minLength: 1,
-				description: "Single-line plain prose. No markdown, no tags, no embedded timestamp.",
-			}),
-			relevance: RelevanceSchema,
-			sourceEntryIds: Type.Array(
-				Type.String({ minLength: 1 }),
-				{
-					minItems: 1,
-					description:
-						"Exact source entry ids from the chunk that directly support this observation. " +
-						"Use only ids shown in '[Source entry id: ...]' labels; never invent ids.",
-				},
-			),
-		}),
-		{ description: "Batch of new observations. May be empty only if the tool is not called at all." },
-	),
-});
-
-type RecordObservationsArgs = Static<typeof RecordObservationsSchema>;
-
-/**
- * Thrown when the agent loop ends with an API/stream failure (`stopReason`
- * `"error"`/`"aborted"`) without recording anything. agent-core returns such
- * runs normally, so without this the caller cannot tell a hard failure from a
- * deliberate empty result (#32).
- */
 export class ObserverStreamError extends Error {
-	readonly stopReason: string;
-	constructor(stopReason: string, errorMessage?: string) {
+	constructor(readonly stopReason: string, errorMessage?: string) {
 		super(`observer stream ended with stopReason "${stopReason}"${errorMessage ? `: ${errorMessage}` : ""}`);
 		this.name = "ObserverStreamError";
-		this.stopReason = stopReason;
 	}
 }
 
-function joinOrEmpty(items: string[]): string {
-	return items.length ? items.join("\n") : "(none yet)";
-}
-
-export function normalizeSourceEntryIds(
-	sourceEntryIds: readonly string[] | undefined,
-	allowedSourceEntryIds: readonly string[],
-): string[] | undefined {
-	if (!sourceEntryIds || sourceEntryIds.length === 0) return undefined;
-	const allowedOrder = new Map<string, number>();
-	for (let i = 0; i < allowedSourceEntryIds.length; i++) allowedOrder.set(allowedSourceEntryIds[i], i);
-
-	const seen = new Set<string>();
-	for (const id of sourceEntryIds) {
-		if (!allowedOrder.has(id)) return undefined;
-		seen.add(id);
+export class ObserverProtocolError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "ObserverProtocolError";
 	}
-	if (seen.size === 0) return undefined;
-	return Array.from(seen).sort((a, b) => (allowedOrder.get(a) ?? 0) - (allowedOrder.get(b) ?? 0));
 }
 
-export async function runObserver(args: RunObserverArgs): Promise<Observation[] | undefined> {
-	const { model, apiKey, headers, env, priorReflections, priorObservations, chunk, allowedSourceEntryIds, signal } = args;
-	const conversation = chunk.trim();
-	if (!conversation) return undefined;
+function currentTreeText(tree: MemoryTree): string {
+	if (!tree.root) return "(no Root yet)";
+	if (isObservation(tree.root)) {
+		return `Root Observation: [${tree.root.id}] ${tree.root.content}\nSources: ${tree.root.sourceEntryIds.join(", ")}`;
+	}
+	const lines = [`Root Segment: [${tree.root.id}] ${tree.root.title}`, `Summary: ${tree.root.summary}`, "Direct children:"];
+	for (const id of tree.root.childIds) {
+		const child = tree.observationsById.get(id) ?? tree.segmentsById.get(id as `s_${string}`);
+		if (!child) continue;
+		lines.push(isSegment(child)
+			? `- Segment [${child.id}] ${child.title} — ${child.summary}`
+			: `- Observation [${child.id}] ${child.content} (sources: ${child.sourceEntryIds.join(", ")})`);
+	}
+	return lines.join("\n");
+}
 
-	const accumulated = new Map<string, Observation>();
-
-	const recordObservations: AgentTool<typeof RecordObservationsSchema> = {
-		name: "record_observations",
-		label: "Record observations",
-		description:
-			"Record a batch of new observations distilled from the conversation chunk. " +
-			"Call this multiple times as you work through the chunk. Stop calling when coverage is complete, " +
-			"then emit a short plain-text confirmation to end the run.",
-		parameters: RecordObservationsSchema,
-		execute: async (_id, params: RecordObservationsArgs) => {
-			let added = 0;
-			let duplicates = 0;
-			let rejected = 0;
-			for (const obs of params.observations) {
-				const sourceEntryIds = normalizeSourceEntryIds(obs.sourceEntryIds, allowedSourceEntryIds);
-				if (!sourceEntryIds) {
-					rejected++;
-					continue;
-				}
-				const content = truncateRecordContent(obs.content);
-				const id = hashId(content);
-				if (accumulated.has(id)) {
-					duplicates++;
-					continue;
-				}
-				accumulated.set(id, {
-					id,
-					content,
-					timestamp: obs.timestamp,
-					relevance: obs.relevance as Relevance,
-					sourceEntryIds,
-					tokenCount: observationLineTokenCount({
-						id,
-						timestamp: obs.timestamp,
-						relevance: obs.relevance,
-						content,
-					}),
-				});
-				added++;
+export async function runObserver(args: RunObserverArgs): Promise<ObserverOutput> {
+	let submitted: ObserverOutput | undefined;
+	let duplicateSubmission = false;
+	const tool: AgentTool<any> = {
+		name: "submit_memory_tree",
+		label: "Submit memory tree",
+		description: "Submit the single recursive Segment Memory Tree increment for this Observer run.",
+		parameters: SubmitTreeSchema,
+		execute: async (_id, params) => {
+			const typed = params as { tree: NodeProposal | null };
+			if (submitted) {
+				duplicateSubmission = true;
+				return { content: [{ type: "text", text: "Rejected: submit_memory_tree may be called only once." }], details: { accepted: false } };
 			}
-			const rejectedPart = rejected > 0
-				? ` ${rejected} observation${rejected === 1 ? "" : "s"} rejected for missing or invalid sourceEntryIds.`
-				: "";
-			const ack =
-				`Recorded ${added} new observation${added === 1 ? "" : "s"} ` +
-				(duplicates > 0 ? `(${duplicates} duplicate${duplicates === 1 ? "" : "s"} skipped).` : ".") +
-				rejectedPart +
-				` Total so far this run: ${accumulated.size}. ` +
-				`Continue if the chunk still has uncovered content; otherwise stop calling the tool and emit a short plain-text confirmation.`;
-			return { content: [{ type: "text", text: ack }], details: { added, duplicates, rejected, total: accumulated.size } };
+			submitted = { tree: typed.tree };
+			return { content: [{ type: "text", text: "Accepted." }], details: { accepted: true } };
 		},
 	};
 
-	const now = nowTimestamp();
-	const userText = `Current local time: ${now}
+	const userText = `SEGMENT REQUIRED: ${args.segmentRequired ? "yes" : "no"}
+Successful Observation batches since last completed segmentation: ${args.successfulBatches}
 
-CURRENT REFLECTIONS:
-${joinOrEmpty(priorReflections)}
+CURRENT TREE:
+${currentTreeText(args.tree)}
 
-CURRENT OBSERVATIONS:
-${joinOrEmpty(priorObservations)}
-
-Compress the following new conversation chunk into observations by calling record_observations one or more times. Do not restate facts already present in current reflections or current observations. Prefer inline conversation timestamps when assigning times; fall back to the current local time above only if no message timestamp applies. Stop calling the tool and reply with a short plain-text confirmation once the chunk is fully covered.
-
-NEW CONVERSATION CHUNK:
-${conversation}`;
-
-	const prompts: Message[] = [
-		{
-			role: "user",
-			content: [{ type: "text", text: userText }],
-			timestamp: Date.now(),
-		},
-	];
-
-	const context: AgentContext = {
-		systemPrompt: OBSERVER_SYSTEM,
-		messages: [],
-		tools: [recordObservations as AgentTool<any>],
-	};
-
-	const reasoning = (model as { reasoning?: unknown }).reasoning;
-	const thinkingLevel = args.thinkingLevel ?? "low";
-	const effectiveMaxTurns = args.maxTurns && args.maxTurns > 0 ? args.maxTurns : undefined;
-	let turnCount = 0;
+NEW SOURCE:
+${args.chunk.trim() || "(none)"}`;
+	const prompts: Message[] = [{ role: "user", content: [{ type: "text", text: userText }], timestamp: Date.now() }];
+	const context: AgentContext = { systemPrompt: OBSERVER_SYSTEM, messages: [], tools: [tool] };
 	const config: AgentLoopConfig = {
-		model,
-		apiKey,
-		headers,
-		env,
-		maxTokens: boundedMaxTokens(model, AGENT_LOOP_MAX_TOKENS),
-		convertToLlm: (msgs) => msgs as Message[],
+		model: args.model,
+		apiKey: args.apiKey,
+		headers: args.headers,
+		env: args.env,
+		maxTokens: boundedMaxTokens(args.model, AGENT_LOOP_MAX_TOKENS),
+		convertToLlm: (messages) => messages as Message[],
 		toolExecution: "sequential",
-		...(reasoning && thinkingLevel !== "off" ? { reasoning: thinkingLevel } : {}),
-		...(effectiveMaxTurns !== undefined
-			? {
-				shouldStopAfterTurn: () => {
-					turnCount++;
-					return turnCount >= effectiveMaxTurns;
-				},
-			}
+		shouldStopAfterTurn: () => submitted !== undefined,
+		...((args.model as { reasoning?: unknown }).reasoning && args.thinkingLevel && args.thinkingLevel !== "off"
+			? { reasoning: args.thinkingLevel as Exclude<ModelThinkingLevel, "off"> }
 			: {}),
 	};
 
-	const loop = args.agentLoop ?? agentLoop;
-	const stream = loop(prompts, context, config, signal, streamSimple);
 	let streamError: { stopReason: string; errorMessage?: string } | undefined;
+	const stream = (args.agentLoop ?? agentLoop)(prompts, context, config, args.signal, streamSimple);
 	for await (const event of stream) {
-		// Drain events; the tool's execute already collects records.
 		logAgentStreamError("observer", event);
-		// Watch for a terminal API/stream failure so it is not conflated with
-		// a deliberate empty result.
 		const message = (event as { message?: { role?: string; stopReason?: string; errorMessage?: string } }).message;
 		if (message?.role === "assistant" && (message.stopReason === "error" || message.stopReason === "aborted")) {
 			streamError = { stopReason: message.stopReason, errorMessage: message.errorMessage };
 		}
 	}
 	await stream.result();
-
-	if (accumulated.size === 0) {
-		if (streamError) throw new ObserverStreamError(streamError.stopReason, streamError.errorMessage);
-		return undefined;
-	}
-	return Array.from(accumulated.values());
+	if (streamError) throw new ObserverStreamError(streamError.stopReason, streamError.errorMessage);
+	if (duplicateSubmission) throw new ObserverProtocolError("observer called submit_memory_tree more than once");
+	if (!submitted) throw new ObserverProtocolError("observer ended without calling submit_memory_tree");
+	return submitted;
 }

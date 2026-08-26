@@ -5,7 +5,8 @@ import { registerCompactionHook } from "./hooks/compaction-hook.js";
 import { registerCompactionTrigger } from "./hooks/compaction-trigger.js";
 import { registerConsolidationTrigger } from "./hooks/consolidation-trigger.js";
 import { Runtime } from "./runtime.js";
-import { registerRecallTool } from "./tools/recall-observation.js";
+import { registerOmReadTool } from "./tools/om-read.js";
+import { registerOmSessionsTool } from "./tools/om-sessions.js";
 
 export default function observationalMemory(pi: ExtensionAPI) {
 	const runtime = new Runtime();
@@ -16,5 +17,6 @@ export default function observationalMemory(pi: ExtensionAPI) {
 
 	registerStatusCommand(pi, runtime);
 	registerViewCommand(pi, runtime);
-	registerRecallTool(pi);
+	registerOmSessionsTool(pi);
+	registerOmReadTool(pi);
 }
