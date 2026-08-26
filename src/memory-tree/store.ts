@@ -377,7 +377,7 @@ function eventResult(
 	options: ApplyProposalOptions,
 ): ProposalResult {
 	const segmentCheck = options.segmentRequested ? (warnings.length > 0 ? "partial" : "complete") : "not_requested";
-	if (records.length === 0 && !options.segmentRequested) return { tree, warnings };
+	if (newObservations.length === 0 && !options.segmentRequested) return { tree, warnings };
 	if (newObservations.length > 0 && !options.coversUpToId) return { tree, warnings: [...warnings, "missing coverage marker"] };
 	return {
 		tree,

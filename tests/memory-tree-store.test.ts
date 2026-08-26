@@ -118,4 +118,28 @@ describe("applyObserverProposal", () => {
 		expect(second.tree.root?.id).toBe("s_111111111111");
 		expect(second.data?.segmentCheck).toBe("complete");
 	});
+
+	it("does not persist a Root-only ordinary proposal after invalid leaves are removed", () => {
+		const a = observation("aaaaaaaaaaaa", "raw-a");
+		const b = observation("bbbbbbbbbbbb", "raw-b");
+		const root = segment("s_111111111111", [a.id, b.id]);
+		const entries = [source("raw-a"), source("raw-b"), event("event-a", [a, b, root], "raw-b"), source("raw-c")];
+		const tree = new MemoryTreeStore().rebuild(entries);
+
+		const result = applyObserverProposal(tree, {
+			type: "segment",
+			id: root.id,
+			title: root.title,
+			summary: root.summary,
+			children: [{ type: "observation", content: "A proposed leaf with invalid provenance.", sourceEntryIds: ["made-up-source"] }],
+		}, entries, {
+			allowedSourceEntryIds: ["raw-c"],
+			coversUpToId: "raw-c",
+			segmentRequested: false,
+		});
+
+		expect(result.data).toBeUndefined();
+		expect(result.tree.root).toEqual(root);
+		expect(result.warnings).toContain("removed invalid observation proposal");
+	});
 });
