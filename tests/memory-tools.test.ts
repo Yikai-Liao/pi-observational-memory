@@ -70,6 +70,7 @@ describe("memory inspection and export", () => {
 		const markdown = exportMemory(tree, { sessionId: "session-a" }, { format: "markdown", depth: 1 });
 		expect(markdown).toContain("# [s_111111111111] Release project");
 		expect(markdown).toContain("## [s_222222222222] Repair phase");
+		expect(markdown.indexOf("## [s_222222222222]")).toBeLessThan(markdown.indexOf("[cccccccccccc]"));
 	});
 
 	it("applies JSONL depth cutoff and omits summaries when requested", () => {

@@ -1,6 +1,6 @@
 import { estimateStringTokens } from "../tokens.js";
 import { getNode } from "./node.js";
-import { isObservation, isSegment, SEGMENT_RENDERED_DETAILS, type MemoryTree, type Node, type NodeId, type SegmentMemoryDetails } from "./types.js";
+import { isObservation, isSegment, SEGMENT_RENDERED_DETAILS, type MemoryTree, type Node, type NodeId, type Observation, type SegmentMemoryDetails } from "./types.js";
 
 const INTRO = `These are your past working memories, organized as a Segment Tree.
 
@@ -26,14 +26,22 @@ function visit(tree: MemoryTree, node: Node, depth: number, memoryDepth: number,
 	if (depth >= memoryDepth) return;
 
 	const children = node.childIds.map((id) => getNode(tree, id)).filter((child): child is Node => child !== undefined);
-	const observations = children.filter(isObservation);
-	if (observations.length > 0) {
+	let observationIndex = 0;
+	let observations: Observation[] = [];
+	const flushObservations = () => {
+		if (observations.length === 0) return;
 		nodes.push(...observations);
-		sections.push(observations.map((observation, index) => `${index + 1}. [${observation.id}] ${observation.content}`).join("\n"));
-	}
+		sections.push(observations.map((observation) => `${++observationIndex}. [${observation.id}] ${observation.content}`).join("\n"));
+		observations = [];
+	};
 	for (const child of children) {
-		if (isSegment(child)) visit(tree, child, depth + 1, memoryDepth, nodes, sections);
+		if (isObservation(child)) observations.push(child);
+		else {
+			flushObservations();
+			visit(tree, child, depth + 1, memoryDepth, nodes, sections);
+		}
 	}
+	flushObservations();
 }
 
 export function renderMemoryTree(tree: MemoryTree, memoryDepth: number): RenderedMemory {

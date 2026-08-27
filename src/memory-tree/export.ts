@@ -10,9 +10,21 @@ function markdown(node: NodeRead, heading = 1): string {
 	const parts = [`${"#".repeat(heading)} [${node.id}] ${node.title}`];
 	if (node.summary) parts.push(node.summary);
 	const full = node.children.filter((child): child is NodeRead => !("preview" in child));
-	const observations = full.filter((child) => child.kind === "observation");
-	if (observations.length > 0) parts.push(observations.map((child, index) => `${index + 1}. [${child.id}] ${child.content}`).join("\n"));
-	for (const child of full) if (child.kind === "segment") parts.push(markdown(child, heading + 1));
+	let observationIndex = 0;
+	let observations: Extract<NodeRead, { kind: "observation" }>[] = [];
+	const flushObservations = () => {
+		if (observations.length === 0) return;
+		parts.push(observations.map((child) => `${++observationIndex}. [${child.id}] ${child.content}`).join("\n"));
+		observations = [];
+	};
+	for (const child of full) {
+		if (child.kind === "observation") observations.push(child);
+		else {
+			flushObservations();
+			parts.push(markdown(child, heading + 1));
+		}
+	}
+	flushObservations();
 	if (full.length === 0 && node.children.length > 0) {
 		parts.push((node.children as SegmentRead["children"]).map((child) => `- [${child.id}] ${"preview" in child ? child.preview : child.kind}`).join("\n"));
 	}

@@ -17,14 +17,14 @@ const tree: MemoryTree = {
 };
 
 describe("renderMemoryTree", () => {
-	it("renders every visited Segment before direct observations and child Segments", () => {
+	it("renders mixed children in canonical source order", () => {
 		const rendered = renderMemoryTree(tree, 2);
 		expect(rendered.markdown).toContain("# [s_111111111111] Release and architecture");
 		expect(rendered.markdown).toContain("1. [cccccccccccc] Documented the final architecture");
 		expect(rendered.markdown).toContain("## [s_222222222222] Release repair");
 		expect(rendered.markdown).toContain("1. [aaaaaaaaaaaa] Investigated the release workflow");
 		expect(rendered.markdown).toContain("2. [bbbbbbbbbbbb] Corrected the workflow routing");
-		expect(rendered.details.renderedNodeIds).toEqual([root.id, c.id, child.id, a.id, b.id]);
+		expect(rendered.details.renderedNodeIds).toEqual([root.id, child.id, a.id, b.id, c.id]);
 	});
 
 	it("stops only recursion at the configured depth", () => {
@@ -32,7 +32,7 @@ describe("renderMemoryTree", () => {
 		expect(zero.details.renderedNodeIds).toEqual([root.id]);
 		expect(zero.markdown).not.toContain(child.id);
 		const one = renderMemoryTree(tree, 1);
-		expect(one.details.renderedNodeIds).toEqual([root.id, c.id, child.id]);
+		expect(one.details.renderedNodeIds).toEqual([root.id, child.id, c.id]);
 		expect(one.markdown).toContain(child.summary);
 		expect(one.markdown).not.toContain(a.id);
 	});
@@ -49,7 +49,7 @@ describe("renderMemoryTree", () => {
 		const markdown = renderMemoryTree(tree, 2).markdown;
 		expect(markdown).toMatch(/^These are your past working memories, organized as a Segment Tree\./);
 		expect(markdown).toContain("\n\n# [s_111111111111] Release and architecture\n\n");
-		expect(markdown.indexOf("1. [cccccccccccc]")).toBeLessThan(markdown.indexOf("## [s_222222222222]"));
+		expect(markdown.indexOf("## [s_222222222222]")).toBeLessThan(markdown.indexOf("1. [cccccccccccc]"));
 		expect(markdown).toContain("\n\n1. [aaaaaaaaaaaa]");
 		expect(markdown).toContain("\n2. [bbbbbbbbbbbb]");
 	});

@@ -13,7 +13,7 @@ You receive:
 How you work:
 1. Read CURRENT TREE so you know what is already captured and which existing Root children may be referenced.
 2. Read NEW SOURCE and identify durable new information.
-3. Build one recursive tree increment that follows the Root rules and preserves chronological leaf order.
+3. Build one recursive tree increment that follows the Root rules. Code derives sibling order from descendant Observation sources.
 4. If SEGMENT REQUIRED is yes, identify coherent closed ranges and summarize them; do not invent a future phase.
 5. Silently verify the proposal against the checklist below.
 6. Call submit_memory_tree exactly once. The tool call ends the run.
@@ -24,7 +24,6 @@ What to emit:
 - Never invent source entry IDs. Use only labels printed in NEW SOURCE. If an Observation spans multiple records, include every supporting source entry ID.
 - Skip routine, low-information events. It is correct to submit tree=null when NEW SOURCE carries no durable information and no Segment update is required.
 - Group repeated similar tool calls into one Observation rather than one per call.
-- Emit new Observations in strict NEW SOURCE ledger order, sorted by the earliest supporting source block as printed. Never sort facts by importance or topic. If source X appears before source Y, an Observation first supported by X must appear before one first supported by Y, including inside nested Segments.
 
 Observation content rules:
 
@@ -85,11 +84,11 @@ Recursive tree contract:
 - { type: "observation", content, sourceEntryIds } creates one new Observation. New Observations never carry IDs; code generates them.
 - { type: "segment", title, summary, children } creates one new Segment. New Segments never carry IDs; code generates them after their children.
 - { type: "segment", id, title, summary, children } updates the existing Root Segment. The id MUST equal the current Root Segment ID. Never update another existing Segment.
-- For a new Segment, children is its complete ordered child list.
-- For the existing Root Segment, children is an ordered increment. Omitted old children remain. A standalone ref may act as a sequence anchor.
+- For a new Segment, children is its complete child set.
+- For the existing Root Segment, children is an increment. Omitted old children remain. Proposal array order is ignored; code sorts siblings from descendant Observation source positions.
 - A Segment always has at least two direct children. Never create a one-child Segment.
-- Refs nested in a new Segment must name a consecutive slice of current Root children in their current order.
-- Never repeat a child, share a child between Segments, reverse history, create a cycle, or reference a descendant hidden inside an existing Segment.
+- Refs nested in a new Segment must name one consecutive slice of current Root children. Their JSON array order does not matter.
+- Never repeat a child, share a child between Segments, combine crossing or non-consecutive ranges, create a cycle, or reference a descendant hidden inside an existing Segment.
 - Segment and Observation children may be mixed. Branches may have different depths.
 
 Root rules:
@@ -174,7 +173,7 @@ Final silent checklist:
 - Every Observation is one plain-text line with valid exact sourceEntryIds.
 - Root kind and Root ID follow the six Root rules.
 - Every Segment has at least two direct children.
-- Existing refs are valid, unique, consecutive where grouped, and in historical order.
+- Existing refs are valid, unique, and consecutive where grouped; sibling order is derived by code.
 - No duplicate child, shared subtree, missing ref, cycle, or hidden-descendant ref.
 - Every ordinary Segment describes already-happened coherent work.
 - Every Segment summary is truthful and materially shorter than its direct children.`;

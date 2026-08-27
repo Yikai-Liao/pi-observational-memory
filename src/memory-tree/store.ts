@@ -195,8 +195,11 @@ function normalizeSourceIds(ids: unknown, allowed: string[]): string[] | undefin
 	return [...new Set(ids)].sort((a, b) => order.get(a)! - order.get(b)!);
 }
 
+type ProposalOrder = readonly [sourcePosition: number, stablePosition: number];
+
 type BuiltProposal = {
 	id?: NodeId;
+	order: ProposalOrder;
 	records: Node[];
 	consumed: NodeId[];
 	newObservations: Observation[];
@@ -219,37 +222,59 @@ export function applyObserverProposal(
 	const rootChildSet = new Set(rootChildren);
 	const createObservationId = options.createObservationId ?? (() => uniqueId("", occupied));
 	const createSegmentId = options.createSegmentId ?? (() => uniqueId("s_", occupied) as SegmentId);
+	const sourcePositions = sourceRanks(entries);
+	const compareOrder = (a: ProposalOrder, b: ProposalOrder): number => a[0] - b[0] || a[1] - b[1];
+	const baseLeafPositions = new Map<NodeId, number>();
+	let baseLeafPosition = 0;
+	const indexBaseLeaves = (node: Node): void => {
+		if (isObservation(node)) baseLeafPositions.set(node.id, baseLeafPosition++);
+		else for (const id of node.childIds) indexBaseLeaves(getNode(base, id)!);
+	};
+	if (base.root) indexBaseLeaves(base.root);
+	const baseOrder = (node: Node): ProposalOrder => isObservation(node)
+		? [Math.min(...node.sourceEntryIds.map((id) => sourcePositions.get(id) ?? Number.MAX_SAFE_INTEGER)), baseLeafPositions.get(node.id)!]
+		: node.childIds.map((id) => baseOrder(getNode(base, id)!)).sort(compareOrder)[0]!;
+	let newObservationPosition = baseLeafPosition;
+	const emptyBuilt = (): BuiltProposal => ({ order: [Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER], records: [], consumed: [], newObservations: [], promoted: [] });
 
 	const build = (value: NodeProposal, isTop = false): BuiltProposal => {
 		if (!value || typeof value !== "object") {
 			warnings.push("removed malformed node proposal");
-			return { records: [], consumed: [], newObservations: [], promoted: [] };
+			return emptyBuilt();
 		}
 		if (value.type === "ref") {
 			const node = getNode(base, value.id);
 			if (!node || !rootChildSet.has(value.id)) {
 				warnings.push(`removed invalid existing-node reference ${value.id}`);
-				return { records: [], consumed: [], newObservations: [], promoted: [] };
+				return emptyBuilt();
 			}
-			return { id: value.id, records: [], consumed: [value.id], newObservations: [], promoted: [] };
+			return { id: value.id, order: baseOrder(node), records: [], consumed: [value.id], newObservations: [], promoted: [] };
 		}
 		if (value.type === "observation") {
 			const sourceEntryIds = normalizeSourceIds(value.sourceEntryIds, options.allowedSourceEntryIds);
 			if (!validObservationContent(value.content) || !sourceEntryIds) {
 				warnings.push("removed invalid observation proposal");
-				return { records: [], consumed: [], newObservations: [], promoted: [] };
+				return emptyBuilt();
 			}
 			const observation: Observation = { id: createObservationId(), content: value.content.trim(), sourceEntryIds };
 			occupied.add(observation.id);
-			return { id: observation.id, records: [observation], consumed: [], newObservations: [observation], promoted: [] };
+			return {
+				id: observation.id,
+				order: [Math.min(...sourceEntryIds.map((id) => sourcePositions.get(id) ?? Number.MAX_SAFE_INTEGER)), newObservationPosition++],
+				records: [observation],
+				consumed: [],
+				newObservations: [observation],
+				promoted: [],
+			};
 		}
 		if (value.type !== "segment" || !Array.isArray(value.children)) {
 			warnings.push("removed malformed segment proposal");
-			return { records: [], consumed: [], newObservations: [], promoted: [] };
+			return emptyBuilt();
 		}
 
 		const builtChildren = value.children.map((child) => build(child));
-		const flattened = builtChildren.flatMap((child) => child.id ? [child] : child.promoted);
+		const flattened = builtChildren.flatMap((child) => child.id ? [child] : child.promoted).sort((a, b) => compareOrder(a.order, b.order));
+		const order = flattened[0]?.order ?? [Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER];
 		const childIds = flattened.map((child) => child.id!).filter(Boolean);
 		const records = flattened.flatMap((child) => child.records);
 		const consumed = flattened.flatMap((child) => child.consumed);
@@ -264,15 +289,15 @@ export function applyObserverProposal(
 
 		if (!allowedExisting || !title || !summary || (!existing && childIds.length < 2)) {
 			warnings.push(`removed invalid Segment proposal${value.id ? ` ${value.id}` : ""}; promoted valid children`);
-			return { records: [], consumed, newObservations, promoted: flattened };
+			return { order, records: [], consumed, newObservations, promoted: flattened };
 		}
 
 		if (existing) {
-			return { id: existing.id, records, consumed, newObservations, promoted: flattened };
+			return { id: existing.id, order, records, consumed, newObservations, promoted: flattened };
 		}
 		const segment: Segment = { id: createSegmentId(), title, summary, childIds };
 		occupied.add(segment.id);
-		return { id: segment.id, records: [...records, segment], consumed, newObservations, promoted: [] };
+		return { id: segment.id, order, records: [...records, segment], consumed, newObservations, promoted: [] };
 	};
 
 	if (!proposal) {

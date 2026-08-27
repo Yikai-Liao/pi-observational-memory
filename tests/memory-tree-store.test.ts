@@ -201,7 +201,7 @@ describe("applyObserverProposal", () => {
 		expect((result.tree.root as Segment).childIds).toEqual([a.id, b.id, "cccccccccccc", "dddddddddddd"]);
 	});
 
-	it("preserves valid new Observations in source order when a structural proposal is rejected", () => {
+	it("canonicalizes unordered proposal children from source positions", () => {
 		const a = observation("aaaaaaaaaaaa", "raw-a");
 		const b = observation("bbbbbbbbbbbb", "raw-b");
 		const root = segment("s_111111111111", [a.id, b.id], "Root", "Done.");
@@ -218,12 +218,79 @@ describe("applyObserverProposal", () => {
 			createObservationId: () => ids.shift()!,
 		});
 
-		expect(result.warnings).toEqual(expect.arrayContaining([
-			"observation leaf order does not match source ledger order",
-			"rejected structural update; appended valid observations as Root children",
-		]));
+		expect(result.warnings).toEqual([]);
+		expect(result.data?.segmentCheck).toBe("complete");
 		expect((result.tree.root as Segment).childIds).toEqual([a.id, b.id, "cccccccccccc", "dddddddddddd"]);
 		expect(result.data?.nodeRecords.slice(0, 2).map((record) => record.id)).toEqual(["cccccccccccc", "dddddddddddd"]);
+	});
+
+	it("preserves existing leaf order when unordered refs share a source position", () => {
+		const a = observation("aaaaaaaaaaaa", "raw-a", "The shared source established the first durable requirement with enough detail to summarize.");
+		const b = observation("bbbbbbbbbbbb", "raw-a", "The shared source established the second durable requirement with enough detail to summarize.");
+		const root = segment("s_111111111111", [a.id, b.id], "Root", "Done.");
+		const entries = [source("raw-a"), event("initial", [a, b, root], "raw-a"), source("raw-b")];
+		const result = applyObserverProposal(new MemoryTreeStore().rebuild(entries), {
+			type: "segment", id: root.id, title: root.title, summary: root.summary,
+			children: [
+				{ type: "observation", content: "The later source recorded a third durable requirement with enough detail to summarize.", sourceEntryIds: ["raw-b"] },
+				{ type: "segment", title: "Shared source", summary: "Two requirements.", children: [
+					{ type: "ref", id: b.id }, { type: "ref", id: a.id },
+				] },
+			],
+		}, entries, {
+			allowedSourceEntryIds: ["raw-b"], coversUpToId: "raw-b", segmentRequested: true,
+			createObservationId: () => "cccccccccccc", createSegmentId: () => "s_222222222222",
+		});
+
+		expect(result.warnings).toEqual([]);
+		expect(result.tree.segmentsById.get("s_222222222222")?.childIds).toEqual([a.id, b.id]);
+		expect((result.tree.root as Segment).childIds).toEqual(["s_222222222222", "cccccccccccc"]);
+	});
+
+	it("canonicalizes nested Segment and ref siblings while rejecting non-consecutive ranges", () => {
+		const a = observation("aaaaaaaaaaaa", "raw-a");
+		const b = observation("bbbbbbbbbbbb", "raw-b");
+		const root = segment("s_111111111111", [a.id, b.id], "Root", "Done.");
+		const entries = [source("raw-a"), source("raw-b"), event("initial", [a, b, root], "raw-b"), source("raw-c"), source("raw-d")];
+		const observationIds = ["dddddddddddd", "cccccccccccc"];
+		const segmentIds = ["s_222222222222", "s_333333333333"] as const;
+		let segmentIndex = 0;
+		const result = applyObserverProposal(new MemoryTreeStore().rebuild(entries), {
+			type: "segment", id: root.id, title: root.title, summary: root.summary,
+			children: [
+				{ type: "segment", title: "Later", summary: "Later facts.", children: [
+					{ type: "observation", content: "The later source recorded a durable result with enough detail to summarize.", sourceEntryIds: ["raw-d"] },
+					{ type: "observation", content: "The earlier source recorded a durable decision with enough detail to summarize.", sourceEntryIds: ["raw-c"] },
+				] },
+				{ type: "segment", title: "Earlier", summary: "Earlier facts.", children: [
+					{ type: "ref", id: b.id },
+					{ type: "ref", id: a.id },
+				] },
+			],
+		}, entries, {
+			allowedSourceEntryIds: ["raw-c", "raw-d"], coversUpToId: "raw-d", segmentRequested: true,
+			createObservationId: () => observationIds.shift()!,
+			createSegmentId: () => segmentIds[segmentIndex++]!,
+		});
+
+		expect(result.warnings).toEqual([]);
+		expect((result.tree.root as Segment).childIds).toEqual(["s_333333333333", "s_222222222222"]);
+		expect(result.tree.segmentsById.get("s_333333333333")?.childIds).toEqual([a.id, b.id]);
+		expect(result.tree.segmentsById.get("s_222222222222")?.childIds).toEqual(["cccccccccccc", "dddddddddddd"]);
+
+		const c = observation("cccccccccccc", "raw-c");
+		const threeRoot = segment("s_444444444444", [a.id, b.id, c.id], "Root", "Done.");
+		const threeEntries = [source("raw-a"), source("raw-b"), source("raw-c"), event("three", [a, b, c, threeRoot], "raw-c")];
+		const crossed = applyObserverProposal(new MemoryTreeStore().rebuild(threeEntries), {
+			type: "segment", id: threeRoot.id, title: threeRoot.title, summary: threeRoot.summary,
+			children: [{ type: "segment", title: "Gap", summary: "Invalid range.", children: [
+				{ type: "ref", id: c.id }, { type: "ref", id: a.id },
+			] }],
+		}, threeEntries, {
+			allowedSourceEntryIds: [], segmentRequested: true, createSegmentId: () => "s_555555555555",
+		});
+		expect(crossed.warnings).toContain("rejected non-contiguous Segment replacement for s_555555555555");
+		expect(crossed.tree.root).toEqual(threeRoot);
 	});
 
 	it("falls back to existing Root fields and keeps partial cadence after invalid fields", () => {

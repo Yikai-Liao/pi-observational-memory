@@ -134,8 +134,8 @@ TreeStore 提供通用的 Segment 新版本应用能力；V1 的独立策略校�
 递归树增量必须满足：
 
 1. 引用只能指向本轮开始时可见的已有节点；
-2. 新 Segment 的 `children` 是其完整 children；携带已有 ID 的 Segment proposal 中，`children` 是对该节点当前 children 的有序增量，未提及的旧 children 自动保留；
-3. 每个增量中引用的 existing leaves 必须是目标 Segment 当前 children 上保持原顺序的连续 slice；不同 replacements 不重叠，新 Observations 按 source ledger 顺序插入；
+2. 新 Segment 的 `children` 是其完整 children；携带已有 ID 的 Segment proposal 中，`children` 是对该节点当前 children 的增量，未提及的旧 children 自动保留；proposal 的 JSON 数组顺序不构成语义，代码从 descendant Observation 的 source ledger 位置自底向上规范化 sibling 顺序；
+3. 每个增量中引用的 existing leaves 必须是目标 Segment 当前 children 上的连续 slice；不同 replacements 不重叠、不交叉，新 Observations 也按 source ledger 位置插入；
 4. 每个节点最多一个 parent，不允许环、重复 child 或共享子树；
 5. 每个 Segment 至少有两个 direct children，应用增量后 Root Segment 也仍至少有两个 direct children；
 6. Segment 与 Observation 可以混合作为 children，各分支深度不要求一致。
@@ -154,7 +154,7 @@ root after: [P, F]
 
 `P` 的三个分支剩余深度不同：`C` 是直接 Observation，`S1` 和 `S2` 下还有一层。它仍然是合法树，因为最终 leaf 顺序保持为 `[A, B, C, D, E, F]`，Root 也仍有两个 children。若没有 `F`，把全部 Root children 包成唯一 `P` 将因 Root 只剩一个 child 而被拒绝。
 
-新 proposal 采用 best effort：代码先递归处理 children；合法的新 Segment 生成 ID 并保留，非法的新 Segment 被移除，其已经验证的 children 原位提升到父节点，同时立即 warning。更新已有 Segment 时，title、summary 和 children 分别验证；某一字段失败时保留该字段旧值，其余合法更新继续应用。最后仍须通过统一的整树验证，不能靠 best effort 修复单父、顺序、可达性或无环等最终 invariant。
+新 proposal 采用 best effort：代码先递归处理 children，并按 descendant Observation 的 source ledger 位置规范化每层 sibling 顺序；合法的新 Segment 生成 ID 并保留，非法的新 Segment 被移除，其已经验证的 children 提升到父节点，同时立即 warning。更新已有 Segment 时，title、summary 和 children 分别验证；某一字段失败时保留该字段旧值，其余合法更新继续应用。最后仍须通过统一的整树验证；顺序可以从 leaves 确定性恢复，但不重叠、单父、可达性和无环等 invariant 不能靠 best effort 猜测。
 
 ### 3.4 通用 Segment 更新与 append-only records
 
@@ -238,7 +238,7 @@ type SegmentMemoryDetails = {
 };
 ```
 
-`renderedNodeIds` 是本次 Compact 按实际渲染顺序显示的全部节点：每个 Segment 先记录自身，再记录其 direct Observations，最后在深度允许时递归记录 child Segments；两类 children 各自保持原相对顺序。它可用于 `/om:view visible` 和可见/当前差异诊断。Root 为 Segment 时已由 Observer event 持久化；Root 为单个 Observation 时直接引用该 Observation record，均不在 compaction details 中复制。
+`renderedNodeIds` 是本次 Compact 按实际渲染顺序显示的全部节点：每个 Segment 先记录自身，再在深度允许时严格按规范化后的 `childIds` 顺序处理 mixed Observation/Segment children；Observation 直接显示，Segment 递归展开。它可用于 `/om:view visible` 和可见/当前差异诊断。Root 为 Segment 时已由 Observer event 持久化；Root 为单个 Observation 时直接引用该 Observation record，均不在 compaction details 中复制。
 
 ### 4.5 Session 身份
 
@@ -407,7 +407,7 @@ type NodeProposal =
 2. 新 Observation 和新 Segment 不带 ID，代码为其生成永久 ID；
 3. Segment 携带 `id` 表示该逻辑节点的新版本；V1 只允许该 ID 等于当前 Segment Root 的 ID。
 
-`tree` 是以当前 Root 为入口的递归增量，不是完整树快照或操作列表。新 Segment 的 `children` 完整描述该新节点；带现有 ID 的 Segment proposal 则把 `children` 解释为对该节点现有 children 的有序增量，未出现的旧 children 自动保留。单独出现的 `ref` 可以作为顺序锚点，不要求模型重抄全部未变化节点。嵌套关系直接表达同轮新 Segment 的父子关系，代码按 children 依赖自底向上生成 ID，因此模型不需要临时 ID、`targetId` 或 `observationIndex`。例如已有 Root Segment 更新、创建两层新 Segment并留下一个未归组 Observation，可以同时表示为：
+`tree` 是以当前 Root 为入口的递归增量，不是完整树快照或操作列表。新 Segment 的 `children` 完整描述该新节点；带现有 ID 的 Segment proposal 则把 `children` 解释为对该节点现有 children 的增量，未出现的旧 children 自动保留。proposal 的 `children` 数组顺序被忽略；代码从最底层 Observation 的 source ledger 位置自底向上排序，`ref` 只表达参与分组的已有节点，不承担顺序锚点职责。嵌套关系直接表达同轮新 Segment 的父子关系，代码按 children 依赖自底向上生成 ID，因此模型不需要临时 ID、`targetId` 或 `observationIndex`。例如已有 Root Segment 更新、创建两层新 Segment并留下一个未归组 Observation，可以同时表示为：
 
 ```json
 {
@@ -441,7 +441,7 @@ type NodeProposal =
 }
 ```
 
-顶层现有 `id` 就是该 Root Segment 的逻辑身份，不另设 `targetId`；所有内联新节点都没有 ID。示例中的独立 `ref` 只是可选顺序锚点，即使省略，对应旧 child 也会保留。没有 Observation 时 `tree` 可以是 `null`；一个新 Observation 可以直接成为 Root；第二个 Observation 出现时，模型输出一个不带 ID、至少有两个 children 的 Segment；已有 Segment Root 的 proposal 复用其 ID。
+顶层现有 `id` 就是该 Root Segment 的逻辑身份，不另设 `targetId`；所有内联新节点都没有 ID。示例中的独立 `ref` 只声明该已有 child 参与本轮增量；即使省略，对应旧 child 也会保留，最终位置始终由 descendant leaves 推导。没有 Observation 时 `tree` 可以是 `null`；一个新 Observation 可以直接成为 Root；第二个 Observation 出现时，模型输出一个不带 ID、至少有两个 children 的 Segment；已有 Segment Root 的 proposal 复用其 ID。
 
 代码递归归一化 proposal、生成 records、运行整树验证，再追加一个 `om.observations.recorded` event。该工具调用结束本轮，不再为了 Segment 发起第二次模型请求。
 
@@ -472,7 +472,7 @@ Root 最右侧仍在发展的近期 Observations 可以暂时保持平铺；后�
 - 新 Observation 的 content 或 source IDs 非法：移除该叶子并 warning；
 - 新 Segment 非法：移除该 Segment，将已经验证的 children 原位提升到父节点并 warning；
 - 更新已有 Segment 时某个 title、summary 或 children 变更非法：该部分保留旧值，其他合法部分继续，并 warning；
-- 归一化后的候选树仍违反顺序、单父、可达、无环或最少 children 等最终 invariant：拒绝结构更新；同轮合法新 Observations 尽可能作为未分组 Root children 保留并 warning；
+- 归一化会先从 descendant Observation 的 source ledger 位置恢复 sibling 顺序；若候选树仍存在不连续/交叉区间、单父、可达、无环或最少 children 等 invariant 违规，则拒绝结构更新；同轮合法新 Observations 尽可能作为未分组 Root children 保留并 warning；
 - 第一次创建 Segment Root 时没有旧字段可沿用；若归一化后无法形成合法 Root，整轮不提交、coverage 不推进，原始 Session 留待下次重试。
 
 后台 Observer 模型/API 整体失败时不写 event、不推进 coverage 或 batch 计数。Compact 中只有局部 proposal 失败时仍可提交合法结果并继续渲染；Compact-forced Observer 整体失败则取消本次 Compact 并 warning，不使用旧树或 Pi native compaction 删除尚未 Observation 化的 raw history。forced Observer 成功但仍没有任何 Observation 时，插件返回空让 Pi native compaction 处理。append 前 Session ID 或 active-branch generation 已变化时放弃整个结果，禁止写入错误 branch。

@@ -52,7 +52,7 @@ describe("runObserver", () => {
 		expect(systemPrompt).toContain("Hierarchy stability across repeated runs");
 		expect(systemPrompt).toContain("Hierarchy completion objective");
 		expect(systemPrompt).toContain("Multi-level grouping example");
-		expect(systemPrompt).toContain("strict NEW SOURCE ledger order");
+		expect(systemPrompt).toContain("Proposal array order is ignored");
 		expect(systemPrompt).not.toContain("relevance");
 		expect(systemPrompt).not.toContain("dropper");
 	});
