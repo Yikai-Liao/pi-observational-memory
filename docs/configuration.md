@@ -12,6 +12,8 @@ Project values override global values. Restart Pi or reload extensions after cha
 
 ## Full example
 
+The example assumes the user is signed in with a Codex subscription. The recommended Observer configuration uses `gpt-5.6-luna` with medium thinking. The `model` block is an optional override; if you use a different provider, change it to a provider and model available in the local Pi credentials.
+
 ```json
 {
   "observational-memory": {
@@ -23,8 +25,8 @@ Project values override global values. Restart Pi or reload extensions after cha
     "compactAfterTokensRatio": 0.68,
     "memoryDepth": 2,
     "model": {
-      "provider": "openai",
-      "id": "gpt-5.4",
+      "provider": "openai-codex",
+      "id": "gpt-5.6-luna",
       "thinking": "medium"
     },
     "showWorkerNotifications": true,
