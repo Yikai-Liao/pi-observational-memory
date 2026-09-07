@@ -22,7 +22,7 @@ Repeated free-form summaries lose decisions, failed approaches, exact errors, an
 - **Root** — the unique node without a parent. The first Observation is Root; the second creates a normal Segment Root.
 - **Tree projection** — append-only `om.observations.recorded` entries are replayed from the active Pi branch. Later records update the same logical Segment ID.
 
-Example compacted memory at `memoryDepth: 2`:
+Example compacted memory at the recommended `memoryDepth: 3`:
 
 ```md
 These are your past working memories, organized as a Segment Tree.
@@ -39,6 +39,13 @@ Located the routing defect, implemented the correction, and verified the release
 
 1. [737a2b11bf4a] Investigation traced the defect to ref-aware metadata.
 2. [722b3da55001] completed: the corrected workflow passed focused validation.
+
+### [s_91d6e0a4c2b8] Branch routing investigation
+
+Mapped branch creation and manual dispatch to the intended release channels.
+
+1. [c4a7d2e91f30] The workflow selected the wrong path when a release branch was created.
+2. [f8b1c6a03d27] The ref-aware route passed focused validation.
 ```
 
 Every displayed ID is readable with `om_read`.
@@ -69,15 +76,33 @@ pi install /absolute/path/to/pi-segment-memory
 
 Settings live under `observational-memory` in `~/.pi/agent/settings.json` or project-local `.pi/settings.json`. Project settings override global settings.
 
+Minimal recommended configuration:
+
+```json
+{
+  "observational-memory": {
+    "model": {
+      "provider": "openai",
+      "id": "gpt-5.4",
+      "thinking": "medium"
+    },
+    "memoryDepth": 3
+  }
+}
+```
+
+Full configuration, including every available setting:
+
 ```json
 {
   "observational-memory": {
     "observeAfterTokens": 10000,
+    "observerChunkMaxTokens": 60000,
     "segmentEveryObserverRuns": 2,
     "compactAfterTokens": 81000,
     "compactAfterTokensMode": "calibrated",
     "compactAfterTokensRatio": 0.68,
-    "memoryDepth": 2,
+    "memoryDepth": 3,
     "model": {
       "provider": "openai",
       "id": "gpt-5.4",
@@ -90,23 +115,100 @@ Settings live under `observational-memory` in `~/.pi/agent/settings.json` or pro
 }
 ```
 
-`model` and `model.thinking` are optional. When omitted, Observer calls use the session model without inventing a thinking level.
+All other settings are optional and use their built-in defaults. `model` and `model.thinking` are optional; when omitted, Observer calls use the session model without inventing a thinking level. The `memoryDepth: 3` value above is the recommended README setting; the runtime default remains `2`.
 
 | Setting | Default | Meaning |
 |---|---:|---|
-| `observeAfterTokens` | `10000` | Pending source tokens before a background run, and additional growth before retrying a successful empty run. |
-| `observerChunkMaxTokens` | derived | Background-only source cap: 20% of model context, fallback `60000`, minimum `256`. |
-| `segmentEveryObserverRuns` | `2` | Successful non-empty Observation batches between Segment checks. |
-| `compactAfterTokens` | `81000` | Proactive compaction source-token threshold. |
-| `compactAfterTokensMode` | `calibrated` | Fixed threshold or `ratio` of active model context. |
-| `compactAfterTokensRatio` | `0.68` | Ratio-mode threshold multiplier. |
-| `memoryDepth` | `2` | Non-negative Segment render depth; Root is depth `0`. |
-| `model` | session model | Optional `{ provider, id, thinking }` Observer override. |
-| `showWorkerNotifications` | `true` | Show routine Observer notifications. |
-| `passive` | `false` | Disable background Observer and proactive compaction only. |
-| `debugLog` | `false` | Write local diagnostic NDJSON. |
+| `observeAfterTokens` | `10000` | Estimated pending source tokens required before a background Observer run. Lower values run more often; higher values create larger batches. |
+| `observerChunkMaxTokens` | derived | Maximum source size for one background run. When unset, uses 20% of the model context, with a `60000` fallback and `256` minimum. Forced compaction ignores this cap. |
+| `segmentEveryObserverRuns` | `2` | Number of successful non-empty Observation batches between background Segment checks. A compaction always forces a Segment check. |
+| `compactAfterTokens` | `81000` | Estimated source-token threshold after the latest compaction boundary for proactive compaction. Manual/window-pressure compaction is independent. |
+| `compactAfterTokensMode` | `calibrated` | `calibrated` uses the fixed threshold; `ratio` scales the threshold to the active model context. |
+| `compactAfterTokensRatio` | `0.68` | Multiplier used only when `compactAfterTokensMode` is `ratio`; must be between `0` and `1`. |
+| `memoryDepth` | `2` | Maximum Segment expansion depth during compaction; Root is depth `0`, and a Segment at the limit keeps its summary without expanding children. |
+| `model` | session model | Optional Observer model override. If omitted, Observer uses the active session model. |
+| `model.provider` | — | Pi provider ID for the Observer override. Required together with `model.id`. |
+| `model.id` | — | Pi model ID for the Observer override. Required together with `model.provider`. |
+| `model.thinking` | unset | Optional Observer thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. |
+| `showWorkerNotifications` | `true` | Shows routine Observer start/completion notifications. Warnings and errors remain visible when this is `false`. |
+| `passive` | `false` | Disables background Observer runs and proactive compaction. Manual compaction, commands, and memory tools remain available. |
+| `debugLog` | `false` | Writes local diagnostic NDJSON containing counts, IDs, estimates, warnings, and errors. |
 
 See [docs/configuration.md](docs/configuration.md) for exact semantics.
+
+### Adjusting `memoryDepth`
+
+`memoryDepth` controls how far the memory tree is expanded when its contents are injected during compaction. Root is depth `0`; a Segment at the configured limit still shows its title and summary, but its children are not expanded. Using the same tree shaped like `Root → Chapter → Phase → Detail`, the rendered result changes like this:
+
+With `memoryDepth: 0`, only the Root summary is injected:
+
+```md
+# [s_root] Project session
+
+Migration and release work for the project.
+```
+
+With `memoryDepth: 1`, Root Observations and the Chapter summary become visible:
+
+```md
+# [s_root] Project session
+
+Migration and release work for the project.
+
+1. [o_root] The release candidate is waiting for final verification.
+
+## [s_chapter] Release automation
+
+The release workflow was repaired and verified.
+```
+
+With `memoryDepth: 2`, Chapter Observations and the Phase summary are added:
+
+```md
+# [s_root] Project session
+
+Migration and release work for the project.
+
+1. [o_root] The release candidate is waiting for final verification.
+
+## [s_chapter] Release automation
+
+The release workflow was repaired and verified.
+
+1. [o_chapter] The workflow now routes release branches to the correct environment.
+
+### [s_phase] Branch routing investigation
+
+The routing defect was traced to ref-aware metadata.
+```
+
+With the recommended `memoryDepth: 3`, Phase Observations and the Detail summary are also visible:
+
+```md
+# [s_root] Project session
+
+Migration and release work for the project.
+
+1. [o_root] The release candidate is waiting for final verification.
+
+## [s_chapter] Release automation
+
+The release workflow was repaired and verified.
+
+1. [o_chapter] The workflow now routes release branches to the correct environment.
+
+### [s_phase] Branch routing investigation
+
+The routing defect was traced to ref-aware metadata.
+
+1. [o_phase] The manual dispatch path passed focused validation.
+
+#### [s_detail] Exact ref verification
+
+The candidate image and Pack reference point to the same release commit.
+```
+
+Each increment applies the same rule to the next Segment level: the Segment summary is retained, and its direct Observations and child Segments are expanded when their parent is below the configured depth. Lower values keep the injected memory shorter and more abstract; higher values expose more detail and can use more context. Changing `memoryDepth` changes the rendered view; it does not delete or flatten the stored memory tree.
 
 ## Runtime behavior
 
