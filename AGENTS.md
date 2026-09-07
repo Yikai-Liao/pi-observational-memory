@@ -1,36 +1,47 @@
 # Project agent memory
 
-This file is the project's committed home for project-intrinsic agent knowledge: build, test, release, architecture, and sharp-edge notes that should travel with the code.
+Segment Memory V4 entrypoint: `src/index.ts`. Configuration: `README.md`.
+Lifecycle and ledger: `docs/how-it-works.md`. `CLAUDE.md` links to this file.
+Observer prompts are product behavior for the configured memory model or session
+model, not development Skills.
 
-- Add durable project-specific notes here as they are discovered through real work.
+Checks: `npm test -- <test-file>` for affected behavior; `npm run typecheck` for
+TypeScript changes. Full CI: `.github/workflows/ci.yml`. Model evaluations are
+task-specific; see `eval/AGENTS.md` when changing prompts or evaluation harnesses.
 
-## Model auth (OAuth vs API key)
+## Model auth
 
-`src/runtime.ts` `resolveModel` must accept auth that carries EITHER an `apiKey` OR non-empty
-`headers` (e.g. `Authorization: Bearer …`). Pi's OAuth providers (kimi-coding, xai, openai-codex,
-anthropic OAuth, …) return headers-only auth from `getApiKeyAndHeaders`, and pi-ai providers treat a
-caller-supplied `Authorization` header as a substitute apiKey. The acceptance rule mirrors pi's own
-`AgentSession._getRequiredRequestAuth` (`result.auth.apiKey || result.auth.headers`). Do not
-re-introduce a hard `apiKey` requirement — it breaks compaction/consolidation for every OAuth model.
-Tests: `npm test` (vitest); typecheck: `npm run typecheck`.
+`Runtime.resolveModel` (`src/runtime.ts`) requires successful auth and either a
+non-empty API key/header value (including headers-only OAuth) or a Pi-confirmed
+credential source for request-time signing (non-OAuth; no empty-string key).
+Preserve the bounded, rate-limited re-check of stale credential availability and
+`apiKey`/`headers`/`env` forwarding to Observer. Regressions:
+`tests/runtime.test.ts`, `tests/ambient-credential-auth.test.ts`.
 
 ## Segment Memory V4
 
-`src/memory-tree/store.ts` is the only authority for replay and tree invariants. Persisted V4 events are strict; model proposals alone get best-effort normalization. Compact must queue a fresh forced Observer, then rebuild and render by `memoryDepth`; never compact from stale memory after an Observer failure. V4 intentionally does not read V2/V3 memory.
+`src/memory-tree/store.ts` owns replay and tree invariants. Persisted V4 events
+are strict; only model proposals get best-effort normalization. V4 intentionally
+does not read V2/V3 memory. Code derives sibling order from Observation sources,
+not proposal array order; segmentation preserves every leaf and its provenance.
 
-Prompt regressions are covered by `eval/run-observer-eval.mjs` and `eval/run-memory-tools-eval.mjs`. They use OpenAI Responses API because reasoning effort plus function tools is not supported by the tested Luna model on Chat Completions. Credentials come only from `API_KEY` in the environment.
+Compaction queues a fresh forced Observer, then rebuilds and renders by
+`memoryDepth` (Root depth 0). The forced run rereads the active branch and flushes
+all pending source without the background chunk cap, even in passive mode.
+Observer failure cancels compaction; never substitute stale memory. Preserve
+Session/generation checks before append. See `src/hooks/compaction-hook.ts` and
+`src/hooks/consolidation-trigger.ts`.
 
 ## Maintaining this file
 
-Keep this file for knowledge useful to almost every future agent session in this project.
-Do not repeat what the codebase already shows; point to the authoritative file or command instead.
-Prefer rewriting or pruning existing entries over appending new ones.
-When updating this file, preserve this bar for all agents and keep entries concise.
+Keep durable constraints learned from real work and useful across repository tasks.
+Update existing entries and link authoritative sources; omit task logs, duplicated
+code explanations, and generic workflow advice.
+
+## Token accounting and compaction
 
 <!-- opm:managed:start -->
-- The user prefers narrow fixes that preserve unrelated improvements. For ambiguous semantics, the user wants options and tradeoffs first, then autonomous implementation, validation, and a focused pull request.
-- Compaction, consolidation, and memory storage use separate token domains. `compactAfterTokens` measures estimated source entries after the compaction boundary, while observation and reflection scheduling can use provider deltas. Pool, serialized-input, stored-memory, and output limits use local estimates. Changes to token accounting must align the trigger, status, documentation, and tests. The diagnostic runbook is `.pi/skills/diagnose-compaction-trigger`.
-- Pi exposes aggregate active-context usage, not exact token attribution for an entry or entry-ID range. Its exported range-capable estimator uses a character heuristic, so provider context cannot replace raw-entry counting without changing semantics.
-- Pi context pressure and compactable history are separate conditions. Extension-requested `ctx.compact()` can fail before `session_before_compact` when Pi finds no removable range, while Pi-native compaction handles this path separately.
-- `firstKeptEntryId` is a retention boundary, not a zero-progress boundary. Retained source entries can already exceed `compactAfterTokens`, so cadence changes must test consecutive post-success turns and distinguish successful repetition from failed-attempt backoff.
+- Proactive compaction counts estimated source entries after the compaction boundary, even in ratio mode. Observer scheduling can use provider deltas with a raw-estimate fallback; serialized-input and diagnostic sizes use local estimates. Pi's aggregate context usage is not exact per-entry/range attribution. Rendering is controlled by `memoryDepth`, not a memory token budget. Keep trigger, status, documentation, and affected tests aligned; see `src/progress.ts` and `tests/compaction-trigger.test.ts`.
+- Context pressure does not imply removable history: extension-requested `ctx.compact()` can fail before `session_before_compact` when no range is removable. Pi-native compaction handles this separately.
+- `firstKeptEntryId` controls Pi's raw tail, not tree membership or a progress reset. Retained source entries can exceed the effective threshold; cadence changes must test consecutive post-success turns and distinguish successful repetition from failed-attempt backoff.
 <!-- opm:managed:end -->
