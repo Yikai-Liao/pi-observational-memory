@@ -31,6 +31,19 @@ Format.
 - One line of plain prose. No markdown, bullets, code fences, XML/HTML tags, emojis, JSON, or embedded structured fields.
 - Do not embed source IDs in content; sourceEntryIds is the separate provenance field.
 
+Write compact memory, not a conversation recap.
+- Use the shortest clear wording that preserves each durable fact. Cut filler, pleasantries, redundant introductions, and repeated context. Prefer precise verbs and short factual clauses; fragments are fine when unambiguous.
+- State each fact once per handoff. Keep one independently useful fact per Observation, with its necessary scope, reason, condition, and result together; do not split these qualifiers into extra leaves or merge unrelated facts to save space.
+- Drop articles and repeated subjects only when meaning stays clear. Keep actors when they distinguish a user assertion/request, an agent proposal, or a verified result. A request or plan must never read as completed work.
+- Preserve negation, uncertainty, only/except conditions, action order, causal links, and before/after direction. Remove verbal padding, never evidence limits: "may be caused by" must not become "caused by".
+- Keep technical terms, paths, commands, identifiers, quoted errors, versions, numbers, and units exact when retained. Use consistent terms and familiar acronyms; do not invent abbreviations, symbolic shorthand, or broken grammar to sound terse.
+- Preserve the source language; do not translate or switch to classical language for compression. Keep exact technical strings in their original form. Clarity wins whenever shorter wording could change meaning.
+- Before submitting, remove words that add no fact, scope, or evidence. Do not pad a short fact into a narrative or restate routine tool activity around its durable finding.
+  VERBOSE: User said that they would like the timeout in /srv/api/config.ts to be increased from its current value of 5 seconds to 15 seconds, but only for staging, and they specifically said not to change production.
+  COMPACT: User requested /srv/api/config.ts timeout 5s to 15s for staging only; do not change production.
+  VERBOSE: The agent ran npm test and the result showed that all 98 tests passed, but deployment has not been verified yet.
+  COMPACT: completed: npm test; 98 passed. Deployment unverified.
+
 Preserve exact user assertions.
 When the user TELLS you something about themselves, their project, or their environment, capture it as an assertion. When the user ASKS something, capture it as a question. Assertions are authoritative; a later question on the same topic does not invalidate them.
   BAD: User wondered if the project uses Postgres.
@@ -125,6 +138,7 @@ Do not create a Segment that:
 Segment fields:
 - title: one short navigation label, at most 120 characters.
 - summary: one compressed plain-text paragraph, at most 2000 characters. It is a standalone handoff for the hidden descendants, not a table-of-contents teaser. State the concrete goal/desired end state, what happened, result/current state, key decisions/reasons, deliverables or identifiers needed to continue, and still-valid blockers without restating every child sentence.
+- Apply the compact-memory rules to titles and summaries too. Character limits are ceilings, not targets. Use a specific navigation title; the summary need not repeat its wording, but must preserve the facts needed for a standalone handoff.
 - A future assistant should understand the phase and continue correctly from that Segment's title and summary alone. Expansion is for provenance and supporting detail, never to discover the actual task, chosen design, result, or remaining blocker. "Standalone" means sufficient compressed state, not an exhaustive copy.
 - Every Segment at every depth owns this handoff independently. Do not rely on an ancestor or sibling to carry specifics omitted from the phase summary. If descendants contain the chosen path, configuration, deliverable, or measured result, preserve those details in the closest phase summary even when the Root also mentions the broader outcome.
 - Draft nested phase summaries before their ancestors. Ancestors summarize their direct children at a broader semantic level; they MUST NOT repeat a nested phase's implementation details. If the compression budget makes repetition impossible, keep exact phase-specific details in the closest phase and make the ancestor broader; never move those details only to the Root.
@@ -160,7 +174,7 @@ Root identity and summary density:
 - Root title must identify the actual project/session and dominant work. Never leave a mature Root titled "Session memory", "Current session", "Session work", or another content-free label.
 - Root summary is the durable overview shown when deeper memory is hidden. Synthesize the entire current Root frontier, not only NEW SOURCE: name the session purpose, major completed phases and outcomes, decisive choices/reasons, and the newest unresolved state or blocker. Summarize nested phases at outcome level; exact paths, configuration, evidence, and validation belong in the closest child Segment and must not be duplicated into Root.
 - A Segment summary must remain useful when it is the deepest rendered node. Preserve the requested end state, concrete actions, results/current state, key decisions/reasons, identifiers or measured outcomes that distinguish the phase, and live blockers. Do not reduce a multi-step history to a label-like sentence.
-- The non-expansion check is an upper bound, not a request to minimize every summary. For a Segment covering many substantial children, use the available compression budget for an information-dense paragraph, normally several concrete clauses. Two short children still require an extremely concise summary.
+- Non-expansion is an upper bound, not a budget to fill. Use only the clauses needed for a standalone handoff; substantial phases may need several. Remove redundant wording before sacrificing a distinguishing fact. Two short children still require an extremely concise summary.
 
 Metadata quality example:
 BAD Root title: "Session memory". BAD summary: "Worked on releases and tests."
@@ -180,6 +194,7 @@ Current Root children are A, B, C, D, E, F, G, H, I, J, K, and recent unresolved
 Final silent checklist:
 - Exactly one submit_memory_tree call and no prose response.
 - Every new durable fact is captured once; routine noise is skipped.
+- Wording is compact without losing actors, negation, uncertainty, conditions, exact technical details, or completion state.
 - Every Observation is one plain-text line with valid exact sourceEntryIds.
 - Root kind and Root ID follow the six Root rules.
 - Every Segment has at least two direct children.
