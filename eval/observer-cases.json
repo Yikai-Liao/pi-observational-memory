@@ -33,7 +33,17 @@
     "expect": {
       "topTypes": ["observation", "segment"],
       "sourceIdsInclude": ["src-1"],
-      "contentTerms": ["PR #49", "temporary", "location", "working tree"]
+      "contentTerms": ["PR #49"],
+      "semanticRequirements": [
+        { "id": "exact-location", "description": "Preserves the user's requested skill change: each agent must be given one exact, unambiguous path or location for its temporary notes. Merely mentioning temporary notes or improving locations is insufficient. Equivalent wording such as a single explicit scratch-notes path is valid." },
+        { "id": "clean-worktree", "description": "Preserves the requirement that the reviewed working tree remains clean or unmodified by review notes. Merely mentioning the working tree, or claiming that notes should dirty it, does not satisfy this requirement." }
+      ],
+      "semanticProbes": [
+        { "content": "User asked to improve PR #49 temporary-notes location and working tree handling.", "missing": ["exact-location", "clean-worktree"] },
+        { "content": "User requested PR #49 give each agent one exact temporary-notes location.", "missing": ["clean-worktree"] },
+        { "content": "User requested PR #49 keep the reviewed working tree clean.", "missing": ["exact-location"] },
+        { "content": "User requested PR #49 give each agent one explicit scratch-notes path while leaving the reviewed checkout unmodified.", "missing": [] }
+      ]
     }
   },
   {
