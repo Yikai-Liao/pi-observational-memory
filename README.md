@@ -53,6 +53,12 @@ pi install npm:pi-segment-memory
 
 After publication, the package is discoverable in Pi's [Package Catalog](https://pi.dev/packages) because this package declares the `pi-package` keyword in `package.json`.
 
+## Release
+
+Releases are published by the `Publish package to npm` GitHub Actions workflow when a GitHub Release is published. The release tag must match the package version, for example `v1.0.0` for version `1.0.0`. The workflow runs the type check and test suite, verifies the tag, and publishes with npm provenance.
+
+The workflow uses npm Trusted Publishing through GitHub Actions. Configure the package's trusted publisher on npm with GitHub user `Yikai-Liao`, repository `Yikai-Liao/pi-segment-memory`, workflow filename `npm-publish.yml`, environment `npm`, and permission to run `npm publish`. No long-lived npm token is required.
+
 Development checkout:
 
 ```bash
