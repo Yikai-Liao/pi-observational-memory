@@ -44,6 +44,9 @@ describe("runObserver", () => {
 		await runObserver({ ...args, agentLoop: loop });
 		expect(systemPrompt).toContain("Preserve exact user assertions");
 		expect(systemPrompt).toContain("Frame state changes as supersession");
+		expect(systemPrompt).toContain("Preserve requested end states");
+		expect(systemPrompt).toContain("standalone handoff");
+		expect(systemPrompt).toContain("Every Segment at every depth owns this handoff independently");
 		expect(systemPrompt).toContain("Detail preservation");
 		expect(systemPrompt).toContain("sourceEntryIds");
 		expect(systemPrompt).toContain("at least two direct children");

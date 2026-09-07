@@ -27,6 +27,7 @@ const OUTPUT_ROOT = process.env.REAL_SESSION_EVAL_OUTPUT ?? join(homedir(), CANA
 const ENDPOINT = process.env.EVAL_ENDPOINT ?? "https://lyric-openai-qiyin.services.ai.azure.com/openai/v1";
 const MODEL = process.env.EVAL_MODEL ?? "gpt-5.6-luna-2";
 const SYSTEM_PROMPT = process.env.EVAL_PROMPT_FILE ? await readFile(process.env.EVAL_PROMPT_FILE, "utf8") : OBSERVER_SYSTEM;
+const TRACE_NORMALIZATION = process.env.EVAL_TRACE_NORMALIZATION === "1";
 const MAX_ROUNDS = 6;
 type Selection = { id: string; label: string; activeObservationIds: string[]; droppedObservationIds: string[] };
 const SELECTIONS = (JSON.parse(await readFile(new URL("./real-session-v3-selection.json", import.meta.url), "utf8")) as { sessions: Selection[] }).sessions;
@@ -51,6 +52,24 @@ type Prepared = {
   dir: string;
   seed: MemoryTree;
 };
+type TreeSnapshot = {
+  rootId?: string;
+  observationBatchesSinceSegmentation: number;
+  observations: Observation[];
+  segments: Segment[];
+};
+type NormalizationTrace = {
+  call: number;
+  segmentRequired: boolean;
+  successfulBatches: number;
+  sourceLedgerIds: string[];
+  allowedSourceEntryIds: string[];
+  chunk: string;
+  before: TreeSnapshot;
+  proposal: NodeProposal | null;
+  warnings: string[];
+  after: TreeSnapshot;
+};
 type Generated = {
   prepared: Prepared;
   level: Level;
@@ -59,7 +78,17 @@ type Generated = {
   rounds: number;
   warnings: string[];
   usage: { inputTokens: number; outputTokens: number };
+  normalizationTraces?: NormalizationTrace[];
 };
+
+function snapshotTree(tree: MemoryTree): TreeSnapshot {
+  return {
+    ...(tree.root ? { rootId: tree.root.id } : {}),
+    observationBatchesSinceSegmentation: tree.observationBatchesSinceSegmentation,
+    observations: [...tree.observationsById.values()],
+    segments: [...tree.segmentsById.values()],
+  };
+}
 
 function singleLine(value: unknown): string {
   return String(value ?? "").trim().replace(/\s+/g, " ");
@@ -393,11 +422,15 @@ async function generateRawV4(prepared: Prepared, level: Level, apiKey: string): 
   let pending: Entry[] = [];
   const warnings: string[] = [];
   const usage = { inputTokens: 0, outputTokens: 0 };
+  const normalizationTraces: NormalizationTrace[] = [];
+  const sourceLedgerIds = prepared.branch.filter(isSourceEntry).map((entry) => entry.id);
   let rounds = 0;
 
   const observe = async (forced: boolean) => {
     const serialized = serializeSourceAddressedBranchEntries(pending);
     const segmentRequired = forced || tree.observationBatchesSinceSegmentation + 1 >= 2;
+    const successfulBatches = tree.observationBatchesSinceSegmentation;
+    const before = snapshotTree(tree);
     rounds++;
     const response = await responseCall(apiKey, level, tree, serialized.text, segmentRequired);
     const beforeCount = tree.observationsById.size;
@@ -414,6 +447,18 @@ async function generateRawV4(prepared: Prepared, level: Level, apiKey: string): 
     tree = next;
     if (result.data?.coversUpToId) pending = [];
     warnings.push(...result.warnings.map((warning) => `call ${rounds}: ${warning}`));
+    if (TRACE_NORMALIZATION && result.warnings.length > 0) normalizationTraces.push({
+      call: rounds,
+      segmentRequired,
+      successfulBatches,
+      sourceLedgerIds,
+      allowedSourceEntryIds: serialized.sourceEntryIds,
+      chunk: serialized.text,
+      before,
+      proposal: response.proposal,
+      warnings: result.warnings,
+      after: snapshotTree(tree),
+    });
     usage.inputTokens += Number(response.usage.input_tokens ?? 0);
     usage.outputTokens += Number(response.usage.output_tokens ?? 0);
   };
@@ -423,7 +468,7 @@ async function generateRawV4(prepared: Prepared, level: Level, apiKey: string): 
     await observe(false);
   }
   await observe(true);
-  return { prepared, level, mode: "raw-v4", tree, rounds, warnings, usage };
+  return { prepared, level, mode: "raw-v4", tree, rounds, warnings, usage, normalizationTraces };
 }
 
 async function generateDirect(prepared: Prepared, level: Level, apiKey: string): Promise<Generated> {
@@ -576,6 +621,16 @@ const generated = await mapLimit(tasks, 3, async ({ item, level, mode }) => {
         : await generateRawV4(item, level, apiKey);
   const suffix = mode === "progressive" ? "" : `-${mode}`;
   await writeFile(join(item.dir, `v4-tree-${level}${suffix}.md`), treeMarkdown(result), "utf8");
+  if (TRACE_NORMALIZATION && result.normalizationTraces) {
+    await writeFile(join(item.dir, `normalization-traces-${level}${suffix}.json`), JSON.stringify({
+      sessionId: item.info.id,
+      model: MODEL,
+      level,
+      mode,
+      systemPrompt: SYSTEM_PROMPT,
+      traces: result.normalizationTraces,
+    }, null, 2), "utf8");
+  }
   return result;
 });
 for (const result of generated) {

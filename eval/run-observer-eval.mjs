@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { OBSERVER_SYSTEM } from "../src/agents/observer/prompts.ts";
 import { OBSERVER_TOOL_SCHEMA, buildObserverUserPrompt } from "../src/agents/observer/protocol.ts";
 import { applyObserverProposal } from "../src/memory-tree/store.ts";
+import { estimateStringTokens } from "../src/tokens.ts";
 
 const endpoint = process.env.EVAL_ENDPOINT;
 const model = process.env.EVAL_MODEL;
@@ -26,6 +27,22 @@ function sourceIds(test) {
 	const old = test.tree.observations.flatMap((item) => item.sourceEntryIds);
 	const current = [...test.source.matchAll(/\[Source entry id: ([^\]]+)\]/g)].map((match) => match[1]);
 	return { old, current, entries: [...old, ...current].map((id) => ({ type: "message", id, message: { role: "user", content: id } })) };
+}
+
+function nodeSelfTokens(node) {
+	return estimateStringTokens("content" in node
+		? `[${node.id}] ${node.content}`
+		: `[${node.id}] ${node.title}\n\n${node.summary}`);
+}
+
+function expandingSegments(tree) {
+	return [...tree.segmentsById.values()].filter((segment) => {
+		const children = segment.childIds.reduce((total, id) => {
+			const child = tree.observationsById.get(id) ?? tree.segmentsById.get(id);
+			return total + (child ? nodeSelfTokens(child) : 0);
+		}, 0);
+		return nodeSelfTokens(segment) >= children;
+	});
 }
 
 function nodes(proposal) {
@@ -138,6 +155,9 @@ async function run(test) {
 		});
 		if (checked.proposal !== null && !normalized.data) checked.failures.push("production normalizer rejected the proposal");
 		checked.failures.push(...normalized.warnings.map((warning) => `production warning: ${warning}`));
+		for (const segment of expandingSegments(normalized.tree)) {
+			checked.failures.push(`prompt compression regression: Segment ${segment.id} is not smaller than its direct children`);
+		}
 	}
 	return { name: test.name, passed: checked.failures.length === 0, failures: checked.failures, proposal: checked.proposal };
 }

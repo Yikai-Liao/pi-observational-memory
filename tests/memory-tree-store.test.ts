@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { applyObserverProposal, MemoryTreeError, MemoryTreeStore } from "../src/memory-tree/store.js";
-import { nodeSelfTokenCount } from "../src/memory-tree/node.js";
 import { OM_OBSERVATIONS_RECORDED, type Entry, type Observation, type Segment } from "../src/memory-tree/types.js";
 
 const source = (id: string): Entry => ({ type: "message", id, message: { role: "user", content: id } });
@@ -23,15 +22,6 @@ const observation = (id: string, sourceEntryId: string, content = `A detailed ob
 });
 
 const segment = (id: `s_${string}`, childIds: string[], title = "Work", summary = "Completed related work."): Segment => ({ id, title, summary, childIds });
-
-function summaryAtTokenBoundary(childNodes: Array<Observation | Segment>): string {
-	const children = childNodes.reduce((total, node) => total + nodeSelfTokenCount(node), 0);
-	for (let length = 1; length <= 2_000; length++) {
-		const candidate = segment("s_999999999999", childNodes.map((node) => node.id), "Work", "x".repeat(length));
-		if (nodeSelfTokenCount(candidate) === children) return candidate.summary;
-	}
-	throw new Error("could not construct compression boundary");
-}
 
 describe("MemoryTreeStore", () => {
 	it("promotes the first observation to root and requires a Segment for the second", () => {
@@ -119,13 +109,14 @@ describe("MemoryTreeStore", () => {
 		])).toThrow(/repeats node record/);
 	});
 
-	it("rejects a Segment whose compression is exactly equal to its children", () => {
-		const a = observation("aaaaaaaaaaaa", "raw-a", "A sufficiently detailed first observation.");
-		const b = observation("bbbbbbbbbbbb", "raw-b", "A sufficiently detailed second observation.");
-		const equal = segment("s_111111111111", [a.id, b.id], "Work", summaryAtTokenBoundary([a, b]));
-		expect(() => new MemoryTreeStore().rebuild([
-			source("raw-a"), source("raw-b"), event("equal", [a, b, equal], "raw-b"),
-		])).toThrow(/not smaller than its direct children/);
+	it("does not enforce prompt compression budgets while replaying persisted Segments", () => {
+		const a = observation("aaaaaaaaaaaa", "raw-a", "First observation.");
+		const b = observation("bbbbbbbbbbbb", "raw-b", "Second observation.");
+		const verbose = segment("s_111111111111", [a.id, b.id], "Work", "x".repeat(2_000));
+		const tree = new MemoryTreeStore().rebuild([
+			source("raw-a"), source("raw-b"), event("verbose", [a, b, verbose], "raw-b"),
+		]);
+		expect(tree.root).toEqual(verbose);
 	});
 
 	it("applies a Segment revision that changes its childIds", () => {

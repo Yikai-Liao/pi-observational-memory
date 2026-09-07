@@ -12,7 +12,7 @@ const NodeProposalSchema = Type.Union([
 		type: Type.Literal("segment"),
 		id: Type.Optional(Type.String({ pattern: "^s_[a-f0-9]{12}$" })),
 		title: Type.String({ minLength: 1, maxLength: 120, description: "Short navigation label. Keep title plus summary strictly shorter than rendering direct children; for two short children use only a few words." }),
-		summary: Type.String({ minLength: 1, maxLength: 2000, description: "Compressed historical meaning, not a restatement. Keep title plus summary strictly shorter than rendering direct children; for two children aim below half their combined content length." }),
+		summary: Type.String({ minLength: 1, maxLength: 2000, description: "Compact standalone handoff for this Segment. Nested phases preserve their concrete goal, chosen design, result, and blockers; ancestors keep only broader outcomes. Title plus summary MUST be strictly shorter than rendering direct children; this limit outranks detail, and for two children aim below half their combined content length." }),
 		children: Type.Array(Type.Any(), { description: "Recursive NodeProposal children using the same ref/observation/segment shapes. Array order is ignored; code derives sibling order from descendant Observation sources." }),
 	}),
 ]);
