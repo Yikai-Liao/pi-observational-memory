@@ -2,12 +2,12 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI, truncateHead } from "@earendil-works/pi-coding-agent";
 import { SessionCatalog } from "../sessions/catalog.js";
 
-export const OM_SESSIONS_DESCRIPTION = "Discover local persisted Pi Sessions that contain Segment Memory. Omit path for current cwd and omit keywords unless the user explicitly asks for content filtering; every supplied keyword must match the Root Segment title or summary.";
-export const OM_SESSIONS_GUIDELINE = "For om_sessions, omit path when the user means the current working directory; omit keywords when the user did not provide content keywords. Never invent '.', an empty path, or generic keywords such as 'Segment'.";
+export const OM_SESSIONS_DESCRIPTION = "Discover local persisted Pi Sessions containing Segment Memory, filtered by directory and optional Root title/summary keywords.";
+export const OM_SESSIONS_GUIDELINE = "Use discovered exact Session IDs with om_read when historical memory needs expansion.";
 
 export const OM_SESSIONS_SCHEMA = Type.Object({
-	path: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Explicit directory boundary supplied by the user. Use null for the current cwd; never substitute '.'." })),
-	keywords: Type.Optional(Type.Union([Type.Array(Type.String({ minLength: 1 })), Type.Null()], { description: "Only content keywords explicitly requested by the user; every item must match Root title + summary. Use null when none were requested; never infer generic words such as 'Segment'." })),
+	path: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Explicit directory boundary supplied by the user. Omit or use null for the current cwd; never substitute '.' or an empty path." })),
+	keywords: Type.Optional(Type.Union([Type.Array(Type.String({ minLength: 1 })), Type.Null()], { description: "Only content keywords explicitly requested by the user; every item must match Root title + summary. Omit or use null when none were requested; never infer generic words such as 'Segment'." })),
 });
 
 export function normalizeOmSessionsArguments(args: unknown): { path?: string | null; keywords?: string[] | null } {
