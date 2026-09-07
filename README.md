@@ -119,17 +119,20 @@ All other settings are optional and use their built-in defaults. `model` and `mo
 
 | Setting | Default | Meaning |
 |---|---:|---|
-| `observeAfterTokens` | `10000` | Pending source tokens before a background run, and additional growth before retrying a successful empty run. |
-| `observerChunkMaxTokens` | derived | Background-only source cap: 20% of model context, fallback `60000`, minimum `256`. |
-| `segmentEveryObserverRuns` | `2` | Successful non-empty Observation batches between Segment checks. |
-| `compactAfterTokens` | `81000` | Proactive compaction source-token threshold. |
-| `compactAfterTokensMode` | `calibrated` | Fixed threshold or `ratio` of active model context. |
-| `compactAfterTokensRatio` | `0.68` | Ratio-mode threshold multiplier. |
-| `memoryDepth` | `2` | Non-negative Segment render depth; Root is depth `0`. |
-| `model` | session model | Optional `{ provider, id, thinking }` Observer override. |
-| `showWorkerNotifications` | `true` | Show routine Observer notifications. |
-| `passive` | `false` | Disable background Observer and proactive compaction only. |
-| `debugLog` | `false` | Write local diagnostic NDJSON. |
+| `observeAfterTokens` | `10000` | Estimated pending source tokens required before a background Observer run. Lower values run more often; higher values create larger batches. |
+| `observerChunkMaxTokens` | derived | Maximum source size for one background run. When unset, uses 20% of the model context, with a `60000` fallback and `256` minimum. Forced compaction ignores this cap. |
+| `segmentEveryObserverRuns` | `2` | Number of successful non-empty Observation batches between background Segment checks. A compaction always forces a Segment check. |
+| `compactAfterTokens` | `81000` | Estimated source-token threshold after the latest compaction boundary for proactive compaction. Manual/window-pressure compaction is independent. |
+| `compactAfterTokensMode` | `calibrated` | `calibrated` uses the fixed threshold; `ratio` scales the threshold to the active model context. |
+| `compactAfterTokensRatio` | `0.68` | Multiplier used only when `compactAfterTokensMode` is `ratio`; must be between `0` and `1`. |
+| `memoryDepth` | `2` | Maximum Segment expansion depth during compaction; Root is depth `0`, and a Segment at the limit keeps its summary without expanding children. |
+| `model` | session model | Optional Observer model override. If omitted, Observer uses the active session model. |
+| `model.provider` | — | Pi provider ID for the Observer override. Required together with `model.id`. |
+| `model.id` | — | Pi model ID for the Observer override. Required together with `model.provider`. |
+| `model.thinking` | unset | Optional Observer thinking level: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. |
+| `showWorkerNotifications` | `true` | Shows routine Observer start/completion notifications. Warnings and errors remain visible when this is `false`. |
+| `passive` | `false` | Disables background Observer runs and proactive compaction. Manual compaction, commands, and memory tools remain available. |
+| `debugLog` | `false` | Writes local diagnostic NDJSON containing counts, IDs, estimates, warnings, and errors. |
 
 See [docs/configuration.md](docs/configuration.md) for exact semantics.
 
