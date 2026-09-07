@@ -105,6 +105,10 @@ function validate(test, response) {
 	for (const id of test.expect.refIds ?? []) if (!refs.includes(id)) failures.push(`missing ref ${id}`);
 	for (const id of test.expect.forbidRefIds ?? []) if (refs.includes(id)) failures.push(`forbidden hidden-descendant ref ${id}`);
 	const text = observations.map((node) => node.content).join(" ");
+	const observationEstimatedTokens = observations.reduce((total, node) => total + estimateStringTokens(node.content ?? ""), 0);
+	if (test.expect.maxObservationEstimatedTokens !== undefined && observationEstimatedTokens > test.expect.maxObservationEstimatedTokens) {
+		failures.push(`Observation verbosity: estimated ${observationEstimatedTokens} tokens exceeds ${test.expect.maxObservationEstimatedTokens}`);
+	}
 	for (const term of test.expect.contentTerms ?? []) if (!text.toLowerCase().includes(term.toLowerCase())) failures.push(`Observation content missing ${term}`);
 	for (const pattern of test.expect.forbiddenContentPatterns ?? []) if (new RegExp(pattern, "i").test(text)) failures.push(`Observation content matches forbidden polarity ${pattern}`);
 	const nested = segments.filter(({ depth }) => depth > 0);
@@ -190,7 +194,13 @@ async function run(test) {
 			checked.failures.push(`semantic grading failed: ${error.message}`);
 		}
 	}
-	return { name: test.name, passed: checked.failures.length === 0, failures: checked.failures, proposal: checked.proposal };
+	const all = nodes(checked.proposal);
+	// Local prose-size estimates, not provider usage or serialized tool-call size.
+	const observationEstimatedTokens = all.filter(({ node }) => node.type === "observation")
+		.reduce((total, { node }) => total + estimateStringTokens(node.content ?? ""), 0);
+	const segmentEstimatedTokens = all.filter(({ node }) => node.type === "segment")
+		.reduce((total, { node }) => total + estimateStringTokens(`${node.title ?? ""}\n\n${node.summary ?? ""}`), 0);
+	return { name: test.name, passed: checked.failures.length === 0, failures: checked.failures, observationEstimatedTokens, segmentEstimatedTokens, proposal: checked.proposal };
 }
 
 const results = await Promise.all(cases.map(run));

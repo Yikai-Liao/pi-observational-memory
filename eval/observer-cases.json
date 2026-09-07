@@ -172,5 +172,63 @@
     },
     "source": "[Source entry id: src-1]\n[User]: Continue investigating logging; no conclusion yet.",
     "expect": { "topType": "segment", "rootId": "s_111111111111", "forbidRefIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb"], "allowedSourceIds": ["src-1"] }
+  },
+  {
+    "name": "compact-memory-preserves-scope-uncertainty-and-completion",
+    "segmentRequired": false,
+    "successfulBatches": 0,
+    "tree": {
+      "observations": [],
+      "segments": []
+    },
+    "source": "[Source entry id: src-1]\n[User]: Please make sure to increase the timeout in /srv/api/config.ts from 5s to 15s for staging only. It is very important that you do not change production.\n\n[Source entry id: src-2]\n[Assistant]: The staging timeout problem may be caused by connection reuse, but this is only a hypothesis and has not been confirmed.\n\n[Source entry id: src-3]\n[Tool result for bash]: npm test: 98 passed, 0 failed.\n\n[Source entry id: src-4]\n[Assistant]: The test run completed successfully with all 98 tests passing. I have not changed /srv/api/config.ts yet, and deployment is still unverified.",
+    "expect": {
+      "topType": "segment",
+      "rootId": null,
+      "sourceIdsInclude": [
+        "src-1",
+        "src-2",
+        "src-3",
+        "src-4"
+      ],
+      "contentTerms": [
+        "/srv/api/config.ts",
+        "5s",
+        "15s",
+        "staging",
+        "production",
+        "npm test",
+        "98"
+      ],
+      "maxObservationEstimatedTokens": 110,
+      "semanticRequirements": [
+        {
+          "id": "requested-scope",
+          "description": "User requests timeout change from 5s to 15s in /srv/api/config.ts for staging only; production must not change."
+        },
+        {
+          "id": "uncertain-cause",
+          "description": "Connection reuse is only a possible cause, not a confirmed diagnosis."
+        },
+        {
+          "id": "completion-boundary",
+          "description": "npm test completed with 98 passing tests; config change has not happened and deployment remains unverified."
+        }
+      ],
+      "semanticProbes": [
+        {
+          "content": "User requested /srv/api/config.ts timeout 5s to 15s for staging only; do not change production. Connection reuse may cause timeout; unconfirmed. completed: npm test; 98 passed. Config unchanged; deployment unverified.",
+          "missing": []
+        },
+        {
+          "content": "User requested /srv/api/config.ts timeout 5s to 15s. Connection reuse caused timeout. completed: npm test; 98 passed. Config updated; deployment verified.",
+          "missing": [
+            "requested-scope",
+            "uncertain-cause",
+            "completion-boundary"
+          ]
+        }
+      ]
+    }
   }
 ]
