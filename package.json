@@ -1,6 +1,6 @@
 {
   "name": "pi-segment-memory",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Segment Memory Tree extension for durable, depth-rendered Pi session memory.",
   "type": "module",
   "license": "MIT",
