@@ -83,15 +83,15 @@ Minimal recommended configuration:
   "observational-memory": {
     "model": {
       "provider": "openai-codex",
-      "id": "gpt-5.4-mini",
-      "thinking": "low"
+      "id": "gpt-5.6-luna",
+      "thinking": "medium"
     },
     "memoryDepth": 3
   }
 }
 ```
 
-This example assumes the user is signed in with a Codex subscription. Observer does not need the session model's full reasoning capability, so the recommended configuration uses the smaller `gpt-5.4-mini` with low thinking to reduce cost and latency. When `model` is omitted, Observer uses the active Pi session model and its configured authentication. If a different provider is used, change the override to a provider and small model available in the local Pi credentials.
+This example assumes the user is signed in with a Codex subscription. The recommended Observer configuration uses `gpt-5.6-luna` with medium thinking. When `model` is omitted, Observer uses the active Pi session model and its configured authentication. If a different provider is used, change the override to a provider and model available in the local Pi credentials.
 
 Full configuration, including every available setting:
 
@@ -107,8 +107,8 @@ Full configuration, including every available setting:
     "memoryDepth": 3,
     "model": {
       "provider": "openai-codex",
-      "id": "gpt-5.4-mini",
-      "thinking": "low"
+      "id": "gpt-5.6-luna",
+      "thinking": "medium"
     },
     "showWorkerNotifications": true,
     "passive": false,
