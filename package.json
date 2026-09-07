@@ -1,15 +1,15 @@
 {
-  "name": "pi-observational-memory",
-  "version": "4.0.0",
+  "name": "pi-segment-memory",
+  "version": "1.0.0",
   "description": "Segment Memory Tree extension for durable, depth-rendered Pi session memory.",
   "type": "module",
   "license": "MIT",
-  "author": "elpapi42",
+  "author": "Yikai-Liao",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/elpapi42/pi-observational-memory.git"
+    "url": "git+https://github.com/Yikai-Liao/pi-segment-memory.git"
   },
-  "homepage": "https://github.com/elpapi42/pi-observational-memory#readme",
+  "homepage": "https://github.com/Yikai-Liao/pi-segment-memory#readme",
   "keywords": [
     "pi",
     "pi-agent",
@@ -27,6 +27,7 @@
   "files": [
     "src/",
     "LICENSE",
+    "NOTICE.md",
     "README.md"
   ],
   "scripts": {

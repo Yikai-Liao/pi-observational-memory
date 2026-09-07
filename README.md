@@ -1,8 +1,12 @@
-# pi-observational-memory
+# pi-segment-memory
 
 > Persistent Segment Memory Trees for long Pi sessions.
 
-`pi-observational-memory` records source-backed Observations while a session runs, groups older work into hierarchical Segments, and renders the tree during compaction at a configurable depth.
+`pi-segment-memory` records source-backed Observations while a session runs, groups older work into hierarchical Segments, and renders the tree during compaction at a configurable depth.
+
+## Origin and attribution
+
+`pi-segment-memory` is an independently maintained continuation of the MIT-licensed [`pi-observational-memory`](https://github.com/elpapi42/pi-observational-memory) project by `elpapi42` and its contributors. This repository and npm package are released independently. The original license and copyright notice are preserved in [`LICENSE`](LICENSE); the independent modifications are described in [`NOTICE.md`](NOTICE.md).
 
 > [!IMPORTANT]
 > V4 is a breaking format change. It does not read or migrate V2/V3 memory. Start a new Pi session after upgrading.
@@ -44,13 +48,15 @@ Every displayed ID is readable with `om_read`.
 Requires Pi 0.81.0 or newer.
 
 ```bash
-pi install npm:pi-observational-memory
+pi install npm:pi-segment-memory
 ```
+
+After publication, the package is discoverable in Pi's [Package Catalog](https://pi.dev/packages) because this package declares the `pi-package` keyword in `package.json`.
 
 Development checkout:
 
 ```bash
-pi install /absolute/path/to/pi-observational-memory
+pi install /absolute/path/to/pi-segment-memory
 ```
 
 ## Configuration
