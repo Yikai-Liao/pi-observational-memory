@@ -17,19 +17,13 @@ permissions:
 
 jobs:
   test:
-    name: Node ${{ matrix.node-version }}
+    name: Node 24.x
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version:
-          - 22.19.0
-          - 24.x
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 24.x
           cache: npm
       - run: npm ci
       - run: npm run typecheck
