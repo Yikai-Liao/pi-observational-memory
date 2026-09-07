@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ObserverProtocolError, ObserverStreamError, runObserver } from "../src/agents/observer/agent.js";
+import { OBSERVER_SYSTEM } from "../src/agents/observer/prompts.js";
 import type { MemoryTree } from "../src/memory-tree/types.js";
 
 function emptyTree(): MemoryTree {
@@ -35,26 +36,16 @@ describe("runObserver", () => {
 		expect(config.shouldStopAfterTurn()).toBe(true);
 	});
 
-	it("uses the V3-style extraction rules plus Segment Tree constraints", async () => {
+	it("forwards the complete Observer system prompt", async () => {
 		let systemPrompt = "";
 		const loop = fakeAgentLoop(async (_prompts, context) => {
 			systemPrompt = context.systemPrompt;
 			await context.tools[0].execute("tool", { tree: null });
 		});
 		await runObserver({ ...args, agentLoop: loop });
-		expect(systemPrompt).toContain("Preserve exact user assertions");
-		expect(systemPrompt).toContain("Frame state changes as supersession");
-		expect(systemPrompt).toContain("Detail preservation");
-		expect(systemPrompt).toContain("sourceEntryIds");
-		expect(systemPrompt).toContain("at least two direct children");
-		expect(systemPrompt).toContain("same id");
-		expect(systemPrompt).toContain("Root identity and summary density");
-		expect(systemPrompt).toContain("Hierarchy stability across repeated runs");
-		expect(systemPrompt).toContain("Hierarchy completion objective");
-		expect(systemPrompt).toContain("Multi-level grouping example");
-		expect(systemPrompt).toContain("Proposal array order is ignored");
-		expect(systemPrompt).not.toContain("relevance");
-		expect(systemPrompt).not.toContain("dropper");
+		// This mock checks prompt delivery, not model comprehension. Semantic quality
+		// belongs in the Observer eval so equivalent wording can evolve freely.
+		expect(systemPrompt).toBe(OBSERVER_SYSTEM);
 	});
 
 	it("rejects missing and duplicate submissions", async () => {

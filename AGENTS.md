@@ -24,6 +24,9 @@ Preserve the bounded, rate-limited re-check of stale credential availability and
 are strict; only model proposals get best-effort normalization. V4 intentionally
 does not read V2/V3 memory. Code derives sibling order from Observation sources,
 not proposal array order; segmentation preserves every leaf and its provenance.
+Segment non-expansion is a prompt/eval quality criterion, not a runtime tree
+invariant; replay and proposal normalization must not reject records using local
+token estimates.
 
 Compaction queues a fresh forced Observer, then rebuilds and renders by
 `memoryDepth` (Root depth 0). The forced run rereads the active branch and flushes

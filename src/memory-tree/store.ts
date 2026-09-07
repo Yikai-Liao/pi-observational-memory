@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { getNode, segmentIsNonExpanding, validObservationContent, validSegmentSummary, validSegmentTitle } from "./node.js";
+import { getNode, validObservationContent, validSegmentSummary, validSegmentTitle } from "./node.js";
 import {
 	isNodeRecord,
 	isObservation,
@@ -139,13 +139,7 @@ function validateAndPublish(tree: MemoryTree, entries: Entry[], firstSeen: Map<N
 		throw new MemoryTreeError("observation leaf order does not match source ledger order");
 	}
 
-	const published = { ...tree, root, parentByChildId: parents };
-	for (const segment of published.segmentsById.values()) {
-		if (!segmentIsNonExpanding(published, segment)) {
-			throw new MemoryTreeError(`segment ${segment.id} is not smaller than its direct children`);
-		}
-	}
-	return published;
+	return { ...tree, root, parentByChildId: parents };
 }
 
 export class MemoryTreeStore {

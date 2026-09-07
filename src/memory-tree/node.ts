@@ -1,5 +1,4 @@
-import { estimateStringTokens } from "../tokens.js";
-import { isSegment, type MemoryTree, type Node, type NodeId, type Observation, type Segment } from "./types.js";
+import { isSegment, type MemoryTree, type Node, type NodeId, type Segment } from "./types.js";
 
 export const MAX_SEGMENT_TITLE_CHARS = 120;
 export const MAX_SEGMENT_SUMMARY_CHARS = 2_000;
@@ -33,25 +32,4 @@ export function validSegmentSummary(value: unknown): value is string {
 		&& value.trim().length > 0
 		&& value.length <= MAX_SEGMENT_SUMMARY_CHARS
 		&& !/[\r\n]/.test(value);
-}
-
-export function renderObservationSelf(observation: Observation): string {
-	return `[${observation.id}] ${observation.content}`;
-}
-
-export function renderSegmentSelf(segment: Segment): string {
-	return `[${segment.id}] ${segment.title}\n\n${segment.summary}`;
-}
-
-export function nodeSelfTokenCount(node: Node): number {
-	return estimateStringTokens(isSegment(node) ? renderSegmentSelf(node) : renderObservationSelf(node));
-}
-
-export function segmentIsNonExpanding(tree: MemoryTree, segment: Segment): boolean {
-	const own = nodeSelfTokenCount(segment);
-	const children = segment.childIds.reduce((total, id) => {
-		const child = getNode(tree, id);
-		return total + (child ? nodeSelfTokenCount(child) : 0);
-	}, 0);
-	return own < children;
 }

@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import { OBSERVER_SYSTEM } from "../src/agents/observer/prompts.ts";
 import { OBSERVER_TOOL_SCHEMA, buildObserverUserPrompt } from "../src/agents/observer/protocol.ts";
 import { applyObserverProposal } from "../src/memory-tree/store.ts";
+import { estimateStringTokens } from "../src/tokens.ts";
+import { checkObservationMeaning } from "./observer-semantic-check.mjs";
 
 const endpoint = process.env.EVAL_ENDPOINT;
 const model = process.env.EVAL_MODEL;
@@ -26,6 +28,22 @@ function sourceIds(test) {
 	const old = test.tree.observations.flatMap((item) => item.sourceEntryIds);
 	const current = [...test.source.matchAll(/\[Source entry id: ([^\]]+)\]/g)].map((match) => match[1]);
 	return { old, current, entries: [...old, ...current].map((id) => ({ type: "message", id, message: { role: "user", content: id } })) };
+}
+
+function nodeSelfTokens(node) {
+	return estimateStringTokens("content" in node
+		? `[${node.id}] ${node.content}`
+		: `[${node.id}] ${node.title}\n\n${node.summary}`);
+}
+
+function expandingSegments(tree) {
+	return [...tree.segmentsById.values()].filter((segment) => {
+		const children = segment.childIds.reduce((total, id) => {
+			const child = tree.observationsById.get(id) ?? tree.segmentsById.get(id);
+			return total + (child ? nodeSelfTokens(child) : 0);
+		}, 0);
+		return nodeSelfTokens(segment) >= children;
+	});
 }
 
 function nodes(proposal) {
@@ -138,6 +156,39 @@ async function run(test) {
 		});
 		if (checked.proposal !== null && !normalized.data) checked.failures.push("production normalizer rejected the proposal");
 		checked.failures.push(...normalized.warnings.map((warning) => `production warning: ${warning}`));
+		for (const segment of expandingSegments(normalized.tree)) {
+			checked.failures.push(`prompt compression regression: Segment ${segment.id} is not smaller than its direct children`);
+		}
+	}
+	if (checked.failures.length === 0 && test.expect.semanticRequirements) {
+		try {
+			const grade = (content) => checkObservationMeaning({
+				source: test.source,
+				content,
+				requirements: test.expect.semanticRequirements,
+				request: async (input) => {
+					const response = await post({ model, reasoning: { effort: reasoning }, ...input });
+					if (!response.ok) throw new Error(`semantic grader HTTP ${response.status}`);
+					return response.json();
+				},
+			});
+			// Calibrate on omissions and valid paraphrases, independently of the
+			// generated answer. An unreliable grader fails the eval, never passes it.
+			for (const [index, probe] of (test.expect.semanticProbes ?? []).entries()) {
+				const checks = await grade(probe.content);
+				if (checks.some((check) => check.passed !== !probe.missing.includes(check.id))) {
+					checked.failures.push(`semantic grader calibration failed for probe ${index + 1}`);
+				}
+			}
+			if (checked.failures.length === 0) {
+				const content = nodes(checked.proposal).filter(({ node }) => node.type === "observation").map(({ node }) => node.content).join("\n");
+				for (const check of await grade(content)) {
+					if (!check.passed) checked.failures.push(`Observation meaning missing ${check.id}: ${check.reason}`);
+				}
+			}
+		} catch (error) {
+			checked.failures.push(`semantic grading failed: ${error.message}`);
+		}
 	}
 	return { name: test.name, passed: checked.failures.length === 0, failures: checked.failures, proposal: checked.proposal };
 }

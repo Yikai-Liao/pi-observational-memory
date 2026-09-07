@@ -44,6 +44,11 @@ When the user uses non-standard terminology, quote their exact words so future r
   BAD: User requested a background summary.
   GOOD: User requested a "memory flame graph" (their term).
 
+Preserve requested end states.
+When the user requests work, capture the concrete desired outcome and acceptance constraints, not merely the topic, pain point, or verb such as "improve", "handle", or "iterate".
+  BAD: User asked to improve the local review experience.
+  GOOD: User asked to update PR #49 so the review skill always gives agents one exact temporary-notes location without dirtying the reviewed working tree.
+
 Use precise action verbs. Replace vague verbs with ones that clarify the action.
   BAD: Agent did the auth change.
   GOOD: Agent replaced cookie auth with JWT validation in src/auth.ts.
@@ -112,16 +117,20 @@ Create an ordinary Segment only when:
 
 Do not create a Segment that:
 - Describes only future plans or waits for future children.
-- Merges unrelated work merely to reduce node count.
+- Merges unrelated work merely to reduce node count. Shared chronology is insufficient: an editor-theme preference and a CI-outage diagnosis must remain separate Root children.
 - Claims a result absent from its children.
 - Reorders, duplicates, or shares leaves.
 - Wraps every Root child into one new child and leaves the Root with only that child.
 
 Segment fields:
 - title: one short navigation label, at most 120 characters.
-- summary: one compressed plain-text paragraph, at most 2000 characters. State what happened, result/current state, key decisions/reasons, and still-valid blockers without restating every child sentence.
-- The rendered Segment is [id] + title + summary. It MUST be strictly shorter than the sum of rendering its direct children. This is a hard acceptance check, not a stylistic preference.
-- For exactly two short children, make title plus summary extremely concise—aim below half the children's combined content characters. Prefer "Repository requirements" + "Use pnpm; minimum Node.js 22." over a full sentence that repeats both Observations.
+- summary: one compressed plain-text paragraph, at most 2000 characters. It is a standalone handoff for the hidden descendants, not a table-of-contents teaser. State the concrete goal/desired end state, what happened, result/current state, key decisions/reasons, deliverables or identifiers needed to continue, and still-valid blockers without restating every child sentence.
+- A future assistant should understand the phase and continue correctly from that Segment's title and summary alone. Expansion is for provenance and supporting detail, never to discover the actual task, chosen design, result, or remaining blocker. "Standalone" means sufficient compressed state, not an exhaustive copy.
+- Every Segment at every depth owns this handoff independently. Do not rely on an ancestor or sibling to carry specifics omitted from the phase summary. If descendants contain the chosen path, configuration, deliverable, or measured result, preserve those details in the closest phase summary even when the Root also mentions the broader outcome.
+- Draft nested phase summaries before their ancestors. Ancestors summarize their direct children at a broader semantic level; they MUST NOT repeat a nested phase's implementation details. If the compression budget makes repetition impossible, keep exact phase-specific details in the closest phase and make the ancestor broader; never move those details only to the Root.
+- BAD phase summary: "Standardized the local workspace and documented its lifecycle." GOOD phase summary: "For PR #49, standardized a unique 700-permission agentic-review/review.* directory under the worktree Git administration directory, retained REVIEW_WORKSPACE_PATH as the automation override, and updated SKILL.md/workspace docs."
+- The rendered Segment is [id] + title + summary. Its estimated token count MUST be strictly lower than the sum of its direct children's self-render token counts. This is a hard acceptance check, not a stylistic preference, and it outranks summary density. Before submitting, compare conservatively; if close, remove repetition and implementation detail until the Segment is obviously shorter.
+- For exactly two short children, make title plus summary extremely concise—aim below half the children's combined content characters and roughly one short clause per child. Prefer "Repository requirements" + "Use pnpm; minimum Node.js 22." over a full sentence that repeats both Observations. For unrelated children, use compact factual clauses and omit actor/state introductions and meta-commentary: prefer "Theme and CI" + "Solarized Dark for accessibility; CI runner unavailable."
 - Root follows the same compression rule. A new Root with two children still needs a genuinely compressed title/summary even though Root covers the Session.
 - Do not write "next we will" in place of history.
 
@@ -147,9 +156,10 @@ Hierarchy stability across repeated runs:
 
 Root identity and summary density:
 - The existing Root title and summary are mutable current records, not immutable bootstrap metadata. When SEGMENT REQUIRED is yes, rewrite generic or stale Root fields even if its child structure is otherwise valid.
+- For a Root with only two short direct children, the two-child compression rule overrides the overview checklist below. Replace generic metadata with terse labels and factual clauses; do not write a narrative overview. BAD: "Recorded Solarized Dark as the preferred editor theme for accessibility and diagnosed a transient CI outage caused by an unavailable external runner." GOOD: "Solarized Dark for accessibility; CI runner unavailable."
 - Root title must identify the actual project/session and dominant work. Never leave a mature Root titled "Session memory", "Current session", "Session work", or another content-free label.
-- Root summary is the durable overview shown when deeper memory is hidden. Synthesize the entire current Root frontier, not only NEW SOURCE: name the session purpose, major completed phases and outcomes, decisive choices/reasons, and the newest unresolved state or blocker.
-- A Segment summary must remain useful when it is the deepest rendered node. Preserve concrete actions, results/current state, key decisions/reasons, identifiers or measured outcomes that distinguish the phase, and live blockers. Do not reduce a multi-step history to a label-like sentence.
+- Root summary is the durable overview shown when deeper memory is hidden. Synthesize the entire current Root frontier, not only NEW SOURCE: name the session purpose, major completed phases and outcomes, decisive choices/reasons, and the newest unresolved state or blocker. Summarize nested phases at outcome level; exact paths, configuration, evidence, and validation belong in the closest child Segment and must not be duplicated into Root.
+- A Segment summary must remain useful when it is the deepest rendered node. Preserve the requested end state, concrete actions, results/current state, key decisions/reasons, identifiers or measured outcomes that distinguish the phase, and live blockers. Do not reduce a multi-step history to a label-like sentence.
 - The non-expansion check is an upper bound, not a request to minimize every summary. For a Segment covering many substantial children, use the available compression budget for an information-dense paragraph, normally several concrete clauses. Two short children still require an extremely concise summary.
 
 Metadata quality example:
@@ -176,4 +186,6 @@ Final silent checklist:
 - Existing refs are valid, unique, and consecutive where grouped; sibling order is derived by code.
 - No duplicate child, shared subtree, missing ref, cycle, or hidden-descendant ref.
 - Every ordinary Segment describes already-happened coherent work.
-- Every Segment summary is truthful and materially shorter than its direct children.`;
+- Every Segment's rendered title plus summary is strictly shorter than rendering its direct children; re-check after every metadata rewrite.
+- Every nested Segment's own title and summary preserve its exact goal, chosen design, result/current state, and blocker without relying on Root metadata.
+- Root names each child phase's outcome and current state without repeating the child summary's implementation details.`;

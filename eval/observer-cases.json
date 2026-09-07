@@ -25,6 +25,28 @@
     }
   },
   {
+    "name": "work-request-preserves-actionable-end-state",
+    "segmentRequired": false,
+    "successfulBatches": 0,
+    "tree": { "observations": [], "segments": [] },
+    "source": "[Source entry id: src-1]\n[User]: Iterate PR #49 to improve local review: update the skill so every agent is given one exact temporary-notes location and the reviewed working tree stays clean.",
+    "expect": {
+      "topTypes": ["observation", "segment"],
+      "sourceIdsInclude": ["src-1"],
+      "contentTerms": ["PR #49"],
+      "semanticRequirements": [
+        { "id": "exact-location", "description": "Preserves the user's requested skill change: each agent must be given one exact, unambiguous path or location for its temporary notes. Merely mentioning temporary notes or improving locations is insufficient. Equivalent wording such as a single explicit scratch-notes path is valid." },
+        { "id": "clean-worktree", "description": "Preserves the requirement that the reviewed working tree remains clean or unmodified by review notes. Merely mentioning the working tree, or claiming that notes should dirty it, does not satisfy this requirement." }
+      ],
+      "semanticProbes": [
+        { "content": "User asked to improve PR #49 temporary-notes location and working tree handling.", "missing": ["exact-location", "clean-worktree"] },
+        { "content": "User requested PR #49 give each agent one exact temporary-notes location.", "missing": ["clean-worktree"] },
+        { "content": "User requested PR #49 keep the reviewed working tree clean.", "missing": ["exact-location"] },
+        { "content": "User requested PR #49 give each agent one explicit scratch-notes path while leaving the reviewed checkout unmodified.", "missing": [] }
+      ]
+    }
+  },
+  {
     "name": "multiple-first-batch-observations-create-root-segment",
     "segmentRequired": false,
     "successfulBatches": 0,
@@ -107,6 +129,30 @@
     },
     "source": "",
     "expect": { "topType": "segment", "rootId": "s_111111111111", "nestedSegment": true, "groupedRefIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc"], "summaryTerms": ["block", "certificate"] }
+  },
+  {
+    "name": "segment-summary-is-standalone-handoff",
+    "segmentRequired": true,
+    "successfulBatches": 1,
+    "tree": {
+      "observations": [
+        { "id": "aaaaaaaaaaaa", "content": "User requested PR #49 iteration so the review skill gives every agent one exact temporary-notes location without dirtying the reviewed working tree.", "sourceEntryIds": ["old-1"] },
+        { "id": "bbbbbbbbbbbb", "content": "Decision: create a unique 700-permission agentic-review/review.* directory inside the current worktree Git administration directory, with REVIEW_WORKSPACE_PATH retained as the automation override.", "sourceEntryIds": ["old-2"] },
+        { "id": "cccccccccccc", "content": "completed: updated SKILL.md and workspace documentation with the local workspace lifecycle and verified the legacy temporary-directory wording is absent.", "sourceEntryIds": ["old-3"] },
+        { "id": "dddddddddddd", "content": "A separate release investigation started and has no result yet.", "sourceEntryIds": ["old-4"] }
+      ],
+      "segments": [{ "id": "s_111111111111", "title": "PR work", "summary": "Iterated review workflow and started release investigation.", "childIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc", "dddddddddddd"] }],
+      "rootId": "s_111111111111"
+    },
+    "source": "",
+    "expect": {
+      "topType": "segment",
+      "rootId": "s_111111111111",
+      "nestedSegment": true,
+      "groupedRefIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc"],
+      "ungroupedRefIds": ["dddddddddddd"],
+      "summaryTerms": ["agentic-review/review", "700", "REVIEW_WORKSPACE_PATH"]
+    }
   },
   {
     "name": "reject-hidden-descendant-and-hallucinated-source-temptation",
