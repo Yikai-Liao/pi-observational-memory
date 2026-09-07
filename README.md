@@ -91,6 +91,30 @@ Minimal recommended configuration:
 }
 ```
 
+Full configuration, including every available setting:
+
+```json
+{
+  "observational-memory": {
+    "observeAfterTokens": 10000,
+    "observerChunkMaxTokens": 60000,
+    "segmentEveryObserverRuns": 2,
+    "compactAfterTokens": 81000,
+    "compactAfterTokensMode": "calibrated",
+    "compactAfterTokensRatio": 0.68,
+    "memoryDepth": 3,
+    "model": {
+      "provider": "openai",
+      "id": "gpt-5.4",
+      "thinking": "medium"
+    },
+    "showWorkerNotifications": true,
+    "passive": false,
+    "debugLog": false
+  }
+}
+```
+
 All other settings are optional and use their built-in defaults. `model` and `model.thinking` are optional; when omitted, Observer calls use the session model without inventing a thinking level. The `memoryDepth: 3` value above is the recommended README setting; the runtime default remains `2`.
 
 | Setting | Default | Meaning |
