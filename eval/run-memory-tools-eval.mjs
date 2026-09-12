@@ -1,3 +1,4 @@
+import { Value } from "typebox/value";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { normalizeOmReadArguments, OM_READ_DESCRIPTION, OM_READ_GUIDELINE, OM_READ_SCHEMA } from "../src/tools/om-read.ts";
@@ -8,7 +9,7 @@ const model = process.env.EVAL_MODEL;
 const apiKey = process.env.API_KEY;
 const reasoning = process.env.EVAL_REASONING;
 const reportPath = process.env.EVAL_REPORT;
-if (!endpoint || !model || !apiKey || !reasoning) throw new Error("Set EVAL_ENDPOINT, EVAL_MODEL, EVAL_REASONING, and API_KEY");
+if (!process.env.EVAL_VALIDATE_ONLY && (!endpoint || !model || !apiKey || !reasoning)) throw new Error("Set EVAL_ENDPOINT, EVAL_MODEL, EVAL_REASONING, and API_KEY");
 
 const cases = JSON.parse(await readFile(new URL("./memory-tool-cases.json", import.meta.url), "utf8"));
 const tools = [
@@ -66,6 +67,15 @@ async function run(test) {
 	for (const [key, value] of Object.entries(test.args)) if (!same(value, args[key], key)) failures.push(`expected ${key}=${JSON.stringify(value)}, got ${JSON.stringify(args[key])}`);
 	for (const key of test.absent ?? []) if (key in args) failures.push(`expected ${key} to be omitted`);
 	return { name: test.name, passed: failures.length === 0, failures, call: { name: calls[0]?.name, arguments: args } };
+}
+
+if (process.env.EVAL_VALIDATE_ONLY) {
+  for (const test of cases) {
+    const schema = test.tool === "om_read" ? OM_READ_SCHEMA : OM_SESSIONS_SCHEMA;
+    if (!Value.Check(schema, test.args)) throw new Error(`Invalid expected arguments: ${test.name}`);
+  }
+  console.log(`Validated ${cases.length} memory-tool fixtures against production schemas; no model requests.`);
+  process.exit(0);
 }
 
 const results = await Promise.all(cases.map(run));

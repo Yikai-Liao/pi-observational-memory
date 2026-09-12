@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { runObserver } from "../agents/observer/agent.js";
 import { resolveObserverChunkMaxTokens } from "../config.js";
 import { debugLog, withDebugLogContext } from "../debug-log.js";
-import { MemoryTreeStore, applyObserverProposal } from "../memory-tree/store.js";
+import { applyObserverProposal } from "../memory-tree/store.js";
 import { OM_OBSERVATIONS_RECORDED, type Entry, type MemoryTree } from "../memory-tree/types.js";
 import {
 	latestObservationCoverageId,
@@ -12,8 +12,8 @@ import {
 } from "../progress.js";
 import type { ResolveResult, Runtime } from "../runtime.js";
 import { serializeSourceAddressedBranchEntries } from "../serialize.js";
-
-const store = new MemoryTreeStore();
+import { readSessionMemory, type MemorySession } from "../sessions/memory.js";
+import { captureForkIds, initializeForkIds } from "../sessions/fork.js";
 
 type ObserverCtx = {
 	cwd: string;
@@ -22,11 +22,7 @@ type ObserverCtx = {
 	model: unknown;
 	modelRegistry: any;
 	getContextUsage?: () => { tokens?: number | null; contextWindow?: number } | undefined;
-	sessionManager: {
-		getBranch: () => unknown;
-		getSessionId?: () => string;
-		getSessionFile?: () => string | undefined;
-	};
+	sessionManager: MemorySession;
 };
 
 type ObserverRunOptions = {
@@ -100,9 +96,11 @@ export async function runObserverOnce(
 		const expectedSessionId = runtime.sessionId;
 		const expectedGeneration = runtime.branchGeneration;
 		if (sessionId(ctx) !== expectedSessionId) throw new Error("session changed before Observer started");
+		if (runtime.sessionInitializationError) throw new Error(runtime.sessionInitializationError);
+		runtime.writer.claim(ctx.sessionManager);
 
-		const initialEntries = ctx.sessionManager.getBranch() as Entry[];
-		const initialTree = store.rebuild(initialEntries);
+		const initialEntries = [...ctx.sessionManager.getBranch() as Entry[]];
+		const initialTree = readSessionMemory(ctx.sessionManager);
 		const initialCoverageId = latestObservationCoverageId(initialEntries);
 		const initialTokens = observationProgressTokens(initialEntries, ctx);
 		const pending = sourceEntriesAfterCoverage(initialEntries);
@@ -146,9 +144,15 @@ export async function runObserverOnce(
 			throw new Error("session or branch changed while Observer was running");
 		}
 		const currentEntries = ctx.sessionManager.getBranch() as Entry[];
-		const currentTree = store.rebuild(currentEntries);
+		if (initialEntries.some((entry, index) => currentEntries[index]?.id !== entry.id)) {
+			throw new Error("source branch changed while Observer was running");
+		}
+		const currentTree = readSessionMemory(ctx.sessionManager);
 		const sourceIds = new Set(currentEntries.map((entry) => entry.id));
 		if (serialized.sourceEntryIds.some((id) => !sourceIds.has(id))) throw new Error("Observer source is no longer on the active branch");
+		const initialMemory = initialEntries.filter((entry) => entry.customType === OM_OBSERVATIONS_RECORDED).map((entry) => entry.id);
+		const currentMemory = currentEntries.filter((entry) => entry.customType === OM_OBSERVATIONS_RECORDED).map((entry) => entry.id);
+		if (JSON.stringify(initialMemory) !== JSON.stringify(currentMemory)) throw new Error("memory branch changed while Observer was running");
 
 		const normalized = applyObserverProposal(currentTree, output.tree, currentEntries, {
 			allowedSourceEntryIds: serialized.sourceEntryIds,
@@ -169,7 +173,12 @@ export async function runObserverOnce(
 			return { tree: currentTree, appended: false, warnings: normalized.warnings };
 		}
 
-		pi.appendEntry(OM_OBSERVATIONS_RECORDED, normalized.data);
+		signal.throwIfAborted();
+		if (runtime.sessionId !== expectedSessionId || runtime.branchGeneration !== expectedGeneration || sessionId(ctx) !== expectedSessionId) {
+			throw new Error("session or branch changed before Observer commit");
+		}
+		runtime.writer.append((type, data) => pi.appendEntry(type, data), OM_OBSERVATIONS_RECORDED, normalized.data);
+		const committedTree = readSessionMemory(ctx.sessionManager);
 		debugLog("observer.recorded", {
 			recordCount: normalized.data.nodeRecords.length,
 			observationCount: normalized.data.nodeRecords.filter((record) => !("childIds" in record)).length,
@@ -178,27 +187,50 @@ export async function runObserverOnce(
 			coversUpToId,
 		});
 		notify(runtime, ctx, `Observational memory: recorded ${normalized.data.nodeRecords.length} tree node record${normalized.data.nodeRecords.length === 1 ? "" : "s"}`);
-		return { tree: normalized.tree, appended: true, warnings: normalized.warnings };
+		return { tree: committedTree, appended: true, warnings: normalized.warnings };
 	});
 }
 
 export function registerConsolidationTrigger(pi: ExtensionAPI, runtime: Runtime): void {
-	pi.on("session_start", (_event, ctx) => {
+	pi.on("session_start", (event, ctx) => {
 		runtime.ensureConfig(ctx.cwd);
 		runtime.beginSession(ctx.sessionManager.getSessionId?.());
-		try {
-			store.rebuild(ctx.sessionManager.getBranch() as Entry[]);
-			debugLog("tree.rebuilt", { reason: "session_start" });
-		} catch (error) {
-			runtime.lastObserverError = error instanceof Error ? error.message : String(error);
-			if (ctx.hasUI) ctx.ui.notify(`Observational memory: tree rebuild failed: ${runtime.lastObserverError}`, "warning");
-			debugLog("tree.rebuild_failed", { reason: "session_start", errorMessage: runtime.lastObserverError });
-		}
+		const generation = runtime.branchGeneration;
+		const signal = runtime.sessionAbort.signal;
+		return runtime.enqueueObserver(async () => {
+			if (signal.aborted || runtime.branchGeneration !== generation) return;
+			try {
+				runtime.writer.claim(ctx.sessionManager);
+				initializeForkIds(ctx.sessionManager, (type, data) => runtime.writer.append((type, data) => pi.appendEntry(type, data), type, data), event);
+				readSessionMemory(ctx.sessionManager);
+				debugLog("tree.rebuilt", { reason: "session_start" });
+			} catch (error) {
+				runtime.lastObserverError = error instanceof Error ? error.message : String(error);
+				runtime.sessionInitializationError = runtime.lastObserverError;
+				runtime.writer.block(error);
+				if (ctx.hasUI) ctx.ui.notify(`Observational memory: tree rebuild failed: ${runtime.lastObserverError}`, "warning");
+				debugLog("tree.rebuild_failed", { reason: "session_start", errorMessage: runtime.lastObserverError });
+			}
+		});
+	});
+	pi.on("session_before_fork", (_event, ctx) => {
+		runtime.invalidateBranch();
+		return runtime.enqueueObserver(async () => {
+			try {
+				if (runtime.sessionInitializationError) throw new Error(runtime.sessionInitializationError);
+				runtime.writer.claim(ctx.sessionManager);
+				readSessionMemory(ctx.sessionManager);
+				captureForkIds(ctx.sessionManager);
+			} catch (error) {
+				if (ctx.hasUI) ctx.ui.notify(`Observational memory: Fork cancelled: ${error instanceof Error ? error.message : String(error)}`, "warning");
+				return { cancel: true };
+			}
+		});
 	});
 	pi.on("session_tree", (_event, ctx) => {
 		runtime.invalidateBranch();
 		try {
-			store.rebuild(ctx.sessionManager.getBranch() as Entry[]);
+			readSessionMemory(ctx.sessionManager);
 			debugLog("tree.rebuilt", { reason: "session_tree" });
 		} catch (error) {
 			runtime.lastObserverError = error instanceof Error ? error.message : String(error);

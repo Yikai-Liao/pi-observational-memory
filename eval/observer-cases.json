@@ -59,12 +59,12 @@
     "segmentRequired": false,
     "successfulBatches": 1,
     "tree": {
-      "observations": [{ "id": "aaaaaaaaaaaa", "content": "User selected PostgreSQL for production after comparing database options.", "sourceEntryIds": ["old-1"] }],
+      "observations": [{ "id": "o1", "content": "User selected PostgreSQL for production after comparing database options.", "sourceEntryIds": ["old-1"] }],
       "segments": [],
-      "rootId": "aaaaaaaaaaaa"
+      "rootId": "o1"
     },
     "source": "[Source entry id: src-1]\n[User]: Use pgvector for semantic indexing.",
-    "expect": { "topType": "segment", "rootId": null, "refIds": ["aaaaaaaaaaaa"], "sourceIds": ["src-1"] }
+    "expect": { "topType": "segment", "rootId": null, "refIds": ["o1"], "sourceIds": ["src-1"] }
   },
   {
     "name": "segment-root-appends-through-stable-id",
@@ -72,14 +72,14 @@
     "successfulBatches": 0,
     "tree": {
       "observations": [
-        { "id": "aaaaaaaaaaaa", "content": "Investigation identified a routing bug in the release workflow with exact branch conditions.", "sourceEntryIds": ["old-1"] },
-        { "id": "bbbbbbbbbbbb", "content": "Implementation corrected the release workflow and preserved existing development behavior.", "sourceEntryIds": ["old-2"] }
+        { "id": "o1", "content": "Investigation identified a routing bug in the release workflow with exact branch conditions.", "sourceEntryIds": ["old-1"] },
+        { "id": "o2", "content": "Implementation corrected the release workflow and preserved existing development behavior.", "sourceEntryIds": ["old-2"] }
       ],
-      "segments": [{ "id": "s_111111111111", "title": "Release workflow repair", "summary": "Located and repaired release routing.", "childIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb"] }],
-      "rootId": "s_111111111111"
+      "segments": [{ "id": "s1", "title": "Release workflow repair", "summary": "Located and repaired release routing.", "childIds": ["o1", "o2"] }],
+      "rootId": "s1"
     },
     "source": "[Source entry id: src-1]\n[Assistant]: completed: ran npm test; all 98 tests passed.\n\n[Source entry id: src-2]\n[Tool result for bash]: 98 passed, 0 failed.",
-    "expect": { "topType": "segment", "rootId": "s_111111111111", "sourceIds": ["src-1", "src-2"], "contentTerms": ["98", "pass"] }
+    "expect": { "topType": "segment", "rootId": "s1", "sourceIds": ["src-1", "src-2"], "contentTerms": ["98", "pass"] }
   },
   {
     "name": "forced-segmentation-groups-consecutive-closed-work",
@@ -87,16 +87,16 @@
     "successfulBatches": 1,
     "tree": {
       "observations": [
-        { "id": "aaaaaaaaaaaa", "content": "Investigation reproduced issue 404 and traced the failure to auth.ts token parsing.", "sourceEntryIds": ["old-1"] },
-        { "id": "bbbbbbbbbbbb", "content": "Implementation corrected auth.ts token parsing and added a focused regression test.", "sourceEntryIds": ["old-2"] },
-        { "id": "cccccccccccc", "content": "Validation confirmed the focused auth test and full suite pass after the correction.", "sourceEntryIds": ["old-3"] },
-        { "id": "dddddddddddd", "content": "A separate documentation review started and remains in progress without conclusions.", "sourceEntryIds": ["old-4"] }
+        { "id": "o1", "content": "Investigation reproduced issue 404 and traced the failure to auth.ts token parsing.", "sourceEntryIds": ["old-1"] },
+        { "id": "o2", "content": "Implementation corrected auth.ts token parsing and added a focused regression test.", "sourceEntryIds": ["old-2"] },
+        { "id": "o3", "content": "Validation confirmed the focused auth test and full suite pass after the correction.", "sourceEntryIds": ["old-3"] },
+        { "id": "o4", "content": "A separate documentation review started and remains in progress without conclusions.", "sourceEntryIds": ["old-4"] }
       ],
-      "segments": [{ "id": "s_111111111111", "title": "Session work", "summary": "Fixed authentication and started documentation review.", "childIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc", "dddddddddddd"] }],
-      "rootId": "s_111111111111"
+      "segments": [{ "id": "s1", "title": "Session work", "summary": "Fixed authentication and started documentation review.", "childIds": ["o1", "o2", "o3", "o4"] }],
+      "rootId": "s1"
     },
     "source": "",
-    "expect": { "topType": "segment", "rootId": "s_111111111111", "nestedSegment": true, "groupedRefIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc"], "ungroupedRefIds": ["dddddddddddd"] }
+    "expect": { "topType": "segment", "rootId": "s1", "nestedSegment": true, "groupedRefIds": ["o1", "o2", "o3"], "ungroupedRefIds": ["o4"] }
   },
   {
     "name": "forced-check-can-leave-unrelated-work-ungrouped",
@@ -104,14 +104,14 @@
     "successfulBatches": 1,
     "tree": {
       "observations": [
-        { "id": "aaaaaaaaaaaa", "content": "User stated their preferred editor theme is Solarized Dark for accessibility.", "sourceEntryIds": ["old-1"] },
-        { "id": "bbbbbbbbbbbb", "content": "Agent diagnosed a transient CI outage caused by an unavailable external runner.", "sourceEntryIds": ["old-2"] }
+        { "id": "o1", "content": "User stated their preferred editor theme is Solarized Dark for accessibility.", "sourceEntryIds": ["old-1"] },
+        { "id": "o2", "content": "Agent diagnosed a transient CI outage caused by an unavailable external runner.", "sourceEntryIds": ["old-2"] }
       ],
-      "segments": [{ "id": "s_111111111111", "title": "Current session", "summary": "Recorded a preference and diagnosed CI.", "childIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb"] }],
-      "rootId": "s_111111111111"
+      "segments": [{ "id": "s1", "title": "Current session", "summary": "Recorded a preference and diagnosed CI.", "childIds": ["o1", "o2"] }],
+      "rootId": "s1"
     },
     "source": "",
-    "expect": { "topType": "segment", "rootId": "s_111111111111", "nestedSegment": false }
+    "expect": { "topType": "segment", "rootId": "s1", "nestedSegment": false }
   },
   {
     "name": "unfinished-phase-may-be-segmented-truthfully",
@@ -119,16 +119,16 @@
     "successfulBatches": 1,
     "tree": {
       "observations": [
-        { "id": "aaaaaaaaaaaa", "content": "Investigation tested DNS resolution and confirmed it succeeds from the build host.", "sourceEntryIds": ["old-1"] },
-        { "id": "bbbbbbbbbbbb", "content": "Investigation tested TLS and found certificate verification fails with error CERT_HAS_EXPIRED.", "sourceEntryIds": ["old-2"] },
-        { "id": "cccccccccccc", "content": "The deployment remains blocked because certificate ownership is still unknown.", "sourceEntryIds": ["old-3"] },
-        { "id": "dddddddddddd", "content": "A new unrelated refactor request arrived and has not been investigated.", "sourceEntryIds": ["old-4"] }
+        { "id": "o1", "content": "Investigation tested DNS resolution and confirmed it succeeds from the build host.", "sourceEntryIds": ["old-1"] },
+        { "id": "o2", "content": "Investigation tested TLS and found certificate verification fails with error CERT_HAS_EXPIRED.", "sourceEntryIds": ["old-2"] },
+        { "id": "o3", "content": "The deployment remains blocked because certificate ownership is still unknown.", "sourceEntryIds": ["old-3"] },
+        { "id": "o4", "content": "A new unrelated refactor request arrived and has not been investigated.", "sourceEntryIds": ["old-4"] }
       ],
-      "segments": [{ "id": "s_111111111111", "title": "Deployment investigation", "summary": "Investigated a deployment blocker before switching tasks.", "childIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc", "dddddddddddd"] }],
-      "rootId": "s_111111111111"
+      "segments": [{ "id": "s1", "title": "Deployment investigation", "summary": "Investigated a deployment blocker before switching tasks.", "childIds": ["o1", "o2", "o3", "o4"] }],
+      "rootId": "s1"
     },
     "source": "",
-    "expect": { "topType": "segment", "rootId": "s_111111111111", "nestedSegment": true, "groupedRefIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc"], "summaryTerms": ["block", "certificate"] }
+    "expect": { "topType": "segment", "rootId": "s1", "nestedSegment": true, "groupedRefIds": ["o1", "o2", "o3"], "summaryTerms": ["block", "certificate"] }
   },
   {
     "name": "segment-summary-is-standalone-handoff",
@@ -136,21 +136,21 @@
     "successfulBatches": 1,
     "tree": {
       "observations": [
-        { "id": "aaaaaaaaaaaa", "content": "User requested PR #49 iteration so the review skill gives every agent one exact temporary-notes location without dirtying the reviewed working tree.", "sourceEntryIds": ["old-1"] },
-        { "id": "bbbbbbbbbbbb", "content": "Decision: create a unique 700-permission agentic-review/review.* directory inside the current worktree Git administration directory, with REVIEW_WORKSPACE_PATH retained as the automation override.", "sourceEntryIds": ["old-2"] },
-        { "id": "cccccccccccc", "content": "completed: updated SKILL.md and workspace documentation with the local workspace lifecycle and verified the legacy temporary-directory wording is absent.", "sourceEntryIds": ["old-3"] },
-        { "id": "dddddddddddd", "content": "A separate release investigation started and has no result yet.", "sourceEntryIds": ["old-4"] }
+        { "id": "o1", "content": "User requested PR #49 iteration so the review skill gives every agent one exact temporary-notes location without dirtying the reviewed working tree.", "sourceEntryIds": ["old-1"] },
+        { "id": "o2", "content": "Decision: create a unique 700-permission agentic-review/review.* directory inside the current worktree Git administration directory, with REVIEW_WORKSPACE_PATH retained as the automation override.", "sourceEntryIds": ["old-2"] },
+        { "id": "o3", "content": "completed: updated SKILL.md and workspace documentation with the local workspace lifecycle and verified the legacy temporary-directory wording is absent.", "sourceEntryIds": ["old-3"] },
+        { "id": "o4", "content": "A separate release investigation started and has no result yet.", "sourceEntryIds": ["old-4"] }
       ],
-      "segments": [{ "id": "s_111111111111", "title": "PR work", "summary": "Iterated review workflow and started release investigation.", "childIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc", "dddddddddddd"] }],
-      "rootId": "s_111111111111"
+      "segments": [{ "id": "s1", "title": "PR work", "summary": "Iterated review workflow and started release investigation.", "childIds": ["o1", "o2", "o3", "o4"] }],
+      "rootId": "s1"
     },
     "source": "",
     "expect": {
       "topType": "segment",
-      "rootId": "s_111111111111",
+      "rootId": "s1",
       "nestedSegment": true,
-      "groupedRefIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc"],
-      "ungroupedRefIds": ["dddddddddddd"],
+      "groupedRefIds": ["o1", "o2", "o3"],
+      "ungroupedRefIds": ["o4"],
       "summaryTerms": ["agentic-review/review", "700", "REVIEW_WORKSPACE_PATH"]
     }
   },
@@ -160,18 +160,18 @@
     "successfulBatches": 1,
     "tree": {
       "observations": [
-        { "id": "aaaaaaaaaaaa", "content": "Earlier investigation identified the root cause in src/auth.ts.", "sourceEntryIds": ["old-1"] },
-        { "id": "bbbbbbbbbbbb", "content": "Earlier implementation fixed src/auth.ts and passed focused tests.", "sourceEntryIds": ["old-2"] },
-        { "id": "cccccccccccc", "content": "Current review found a separate logging concern still under investigation.", "sourceEntryIds": ["old-3"] }
+        { "id": "o1", "content": "Earlier investigation identified the root cause in src/auth.ts.", "sourceEntryIds": ["old-1"] },
+        { "id": "o2", "content": "Earlier implementation fixed src/auth.ts and passed focused tests.", "sourceEntryIds": ["old-2"] },
+        { "id": "o3", "content": "Current review found a separate logging concern still under investigation.", "sourceEntryIds": ["old-3"] }
       ],
       "segments": [
-        { "id": "s_222222222222", "title": "Auth repair", "summary": "Located and fixed the auth issue.", "childIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb"] },
-        { "id": "s_111111111111", "title": "Session work", "summary": "Fixed auth and started logging review.", "childIds": ["s_222222222222", "cccccccccccc"] }
+        { "id": "s2", "title": "Auth repair", "summary": "Located and fixed the auth issue.", "childIds": ["o1", "o2"] },
+        { "id": "s1", "title": "Session work", "summary": "Fixed auth and started logging review.", "childIds": ["s2", "o3"] }
       ],
-      "rootId": "s_111111111111"
+      "rootId": "s1"
     },
     "source": "[Source entry id: src-1]\n[User]: Continue investigating logging; no conclusion yet.",
-    "expect": { "topType": "segment", "rootId": "s_111111111111", "forbidRefIds": ["aaaaaaaaaaaa", "bbbbbbbbbbbb"], "allowedSourceIds": ["src-1"] }
+    "expect": { "topType": "segment", "rootId": "s1", "forbidRefIds": ["o1", "o2"], "allowedSourceIds": ["src-1"] }
   },
   {
     "name": "compact-memory-preserves-scope-uncertainty-and-completion",
@@ -230,5 +230,53 @@
         }
       ]
     }
+  },
+{
+  "name": "large-short-root-id-is-copied-exactly",
+  "segmentRequired": false,
+  "successfulBatches": 0,
+  "tree": {
+    "observations": [
+      {
+        "id": "o1",
+        "content": "Investigation identified a routing bug in the release workflow with exact branch conditions.",
+        "sourceEntryIds": [
+          "old-1"
+        ]
+      },
+      {
+        "id": "o2",
+        "content": "Implementation corrected the release workflow and preserved existing development behavior.",
+        "sourceEntryIds": [
+          "old-2"
+        ]
+      }
+    ],
+    "segments": [
+      {
+        "id": "s9007199254740993",
+        "title": "Release workflow repair",
+        "summary": "Located and repaired release routing.",
+        "childIds": [
+          "o1",
+          "o2"
+        ]
+      }
+    ],
+    "rootId": "s9007199254740993"
+  },
+  "source": "[Source entry id: src-1]\n[Assistant]: completed: ran npm test; all 98 tests passed.\n\n[Source entry id: src-2]\n[Tool result for bash]: 98 passed, 0 failed.",
+  "expect": {
+    "topType": "segment",
+    "rootId": "s9007199254740993",
+    "sourceIds": [
+      "src-1",
+      "src-2"
+    ],
+    "contentTerms": [
+      "98",
+      "pass"
+    ]
   }
+}
 ]

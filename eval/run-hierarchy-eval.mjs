@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { fixtureAllocation, prepareHierarchyIds } from "./node-id-fixtures.mjs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { OBSERVER_SYSTEM } from "../src/agents/observer/prompts.ts";
@@ -14,12 +14,13 @@ const reasoning = "medium";
 const reportPath = process.env.EVAL_REPORT ?? "/tmp/hierarchy-eval.json";
 const outputDir = process.env.EVAL_OUTPUT_DIR;
 const attempts = Math.max(1, Number.parseInt(process.env.EVAL_ATTEMPTS ?? "1", 10) || 1);
-if (!process.env.API_KEY) process.loadEnvFile(fileURLToPath(new URL("../.env", import.meta.url)));
+if (!process.env.EVAL_VALIDATE_ONLY && !process.env.API_KEY) process.loadEnvFile(fileURLToPath(new URL("../.env", import.meta.url)));
 const apiKey = process.env.API_KEY;
-if (!apiKey) throw new Error("API_KEY is missing after loading .env");
+if (!process.env.EVAL_VALIDATE_ONLY && !apiKey) throw new Error("API_KEY is missing after loading .env");
 
 const fixture = JSON.parse(await readFile(new URL("./real-session-hierarchy-cases.json", import.meta.url), "utf8"));
 const sessions = JSON.parse(await readFile(new URL("./real-session-hierarchy-observations.json", import.meta.url), "utf8"));
+prepareHierarchyIds(fixture, sessions);
 const systemPrompt = process.env.EVAL_PROMPT_FILE
   ? await readFile(process.env.EVAL_PROMPT_FILE, "utf8")
   : OBSERVER_SYSTEM;
@@ -79,7 +80,8 @@ function buildInput(test) {
     id: `event-${test.name}`,
     customType: OM_OBSERVATIONS_RECORDED,
     data: {
-      version: 1,
+      version: 2,
+      highWater: fixtureAllocation([...selected.values(), ...segments.values()]).highWater,
       nodeRecords: [...selected.values(), ...segments.values()],
       coversUpToId: sourceEntries.at(-1).id,
       segmentCheck: "complete",
@@ -189,11 +191,9 @@ async function run(test) {
   const response = replay?.has(test.name)
     ? { proposal: replay.get(test.name).proposal, usage: replay.get(test.name).usage ?? {} }
     : await callModel(test, base.tree);
-  let counter = 0;
   const normalized = applyObserverProposal(base.tree, response.proposal, base.entries, {
     allowedSourceEntryIds: [],
     segmentRequested: true,
-    createSegmentId: () => `s_${createHash("sha256").update(`${test.name}:${counter++}`).digest("hex").slice(0, 12)}`,
   });
   const evaluation = evaluate(test, base, normalized);
   if (outputDir) {
@@ -234,11 +234,13 @@ async function mapLimit(items, limit, fn) {
   return results;
 }
 
-if (process.env.EVAL_VALIDATE_ONLY === "1") {
+if (process.env.EVAL_VALIDATE_ONLY) {
   for (const test of fixture.cases) {
-    try { buildInput(test); } catch (error) { throw new Error(`${test.name}: ${error.message}`, { cause: error }); }
+    const { tree } = buildInput(test);
+    buildObserverUserPrompt({ tree, chunk: "", segmentRequired: true, successfulBatches: 2 });
+    if (tree.root.id !== test.input.rootId) throw new Error(`Invalid Root ID: ${test.name}`);
   }
-  console.log(JSON.stringify({ validatedCases: fixture.cases.length }, null, 2));
+  console.log(`Validated ${fixture.cases.length} hierarchy seeds against the production store; no model requests.`);
   process.exit(0);
 }
 

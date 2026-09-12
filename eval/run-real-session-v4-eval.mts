@@ -7,7 +7,7 @@
  * Loads API_KEY from the process environment, then project .env if absent.
  * Set REAL_SESSION_EVAL_OUTPUT, EVAL_ENDPOINT, or EVAL_MODEL to override defaults.
  */
-import { createHash } from "node:crypto";
+import { fixtureAllocation } from "./node-id-fixtures.mjs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
@@ -20,7 +20,7 @@ import { maxTreeDepth, renderMemoryTree } from "../src/memory-tree/render.ts";
 import { isSourceEntry } from "../src/progress.ts";
 import { serializeSourceAddressedBranchEntries } from "../src/serialize.ts";
 import { estimateStringTokens } from "../src/tokens.ts";
-import type { Entry, MemoryTree, Node, NodeProposal, Observation, Segment, SegmentId } from "../src/memory-tree/types.ts";
+import type { Entry, MemoryTree, Node, NodeProposal, Observation, Segment } from "../src/memory-tree/types.ts";
 
 const CANARY = process.argv.includes("--canary");
 const OUTPUT_ROOT = process.env.REAL_SESSION_EVAL_OUTPUT ?? join(homedir(), CANARY ? "v4-real-session-eval-canary" : "v4-real-session-eval");
@@ -92,10 +92,6 @@ function snapshotTree(tree: MemoryTree): TreeSnapshot {
 
 function singleLine(value: unknown): string {
   return String(value ?? "").trim().replace(/\s+/g, " ");
-}
-
-function hash12(value: string): string {
-  return createHash("sha256").update(value).digest("hex").slice(0, 12);
 }
 
 function fenced(value: string, language = "text"): string {
@@ -240,7 +236,7 @@ function sourceBatchesAtFrozenV3Cadence(branch: Entry[], frozen: Set<string>): E
 function seedTree(sessionId: string, active: V3Observation[], branch: Entry[]): MemoryTree {
   const ranks = new Map(branch.map((entry, index) => [entry.id, index]));
   const normalized = active.map((item, firstSeen) => ({
-    id: item.id,
+    id: `o${firstSeen + 1}`,
     content: singleLine(item.content),
     sourceEntryIds: [...new Set(item.sourceEntryIds.filter((id) => typeof id === "string" && id.trim().length > 0))],
     firstSeen,
@@ -253,15 +249,16 @@ function seedTree(sessionId: string, active: V3Observation[], branch: Entry[]): 
   if (observations.length === 0) throw new Error(`Session ${sessionId} has no usable active V3 observations`);
   const observationsById = new Map(observations.map((item) => [item.id, item]));
   if (observations.length === 1) {
-    return { observationsById, segmentsById: new Map(), root: observations[0], parentByChildId: new Map(), observationBatchesSinceSegmentation: 1, diagnostics: [] };
+    return { allocation: fixtureAllocation(observations), observationsById, segmentsById: new Map(), root: observations[0], parentByChildId: new Map(), observationBatchesSinceSegmentation: 1, diagnostics: [] };
   }
   const root: Segment = {
-    id: `s_${hash12(`${sessionId}:seed-root`)}`,
+    id: "s1",
     title: "Session memory",
     summary: "Active V3 observations awaiting hierarchical organization.",
     childIds: observations.map((item) => item.id),
   };
   return {
+    allocation: fixtureAllocation([...observations, root]),
     observationsById,
     segmentsById: new Map([[root.id, root]]),
     root,
@@ -300,7 +297,7 @@ async function responseCall(
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const payload = await response.json();
+      const payload = await response.json() as { error?: { message?: string }; output?: Array<{ type: string; name?: string; arguments?: string }>; usage?: unknown };
       if (!response.ok) throw new Error(`HTTP ${response.status}: ${payload?.error?.message ?? JSON.stringify(payload)}`);
       const calls = (payload.output ?? []).filter((item: any) => item.type === "function_call" && item.name === "submit_memory_tree");
       if (calls.length !== 1) throw new Error(`expected exactly one submit_memory_tree call, got ${calls.length}`);
@@ -316,6 +313,7 @@ async function responseCall(
 
 function emptyTree(): MemoryTree {
   return {
+    allocation: fixtureAllocation([]),
     observationsById: new Map(),
     segmentsById: new Map(),
     parentByChildId: new Map(),
@@ -328,7 +326,7 @@ function appendFixedBatch(tree: MemoryTree, prepared: Prepared, batch: V3Observa
   const next = structuredClone(tree) as MemoryTree;
   const globalOrder = new Map([...prepared.seed.observationsById.keys()].map((id, index) => [id, index]));
   const observations = batch
-    .map((item) => prepared.seed.observationsById.get(item.id))
+    .map((item) => prepared.seed.observationsById.get(`o${prepared.activeObservations.findIndex((source) => source.id === item.id) + 1}`))
     .filter((item): item is Observation => item !== undefined && !next.observationsById.has(item.id))
     .sort((a, b) => globalOrder.get(a.id)! - globalOrder.get(b.id)!);
   if (observations.length === 0) return next;
@@ -337,7 +335,7 @@ function appendFixedBatch(tree: MemoryTree, prepared: Prepared, batch: V3Observa
     if (observations.length === 1) next.root = observations[0];
     else {
       const root: Segment = {
-        id: `s_${hash12(`${prepared.info.id}:seed-root`)}`,
+        id: "s1",
         title: "Session memory",
         summary: "Active V3 observations awaiting hierarchical organization.",
         childIds: observations.map((item) => item.id),
@@ -348,7 +346,7 @@ function appendFixedBatch(tree: MemoryTree, prepared: Prepared, batch: V3Observa
     }
   } else if ("content" in next.root) {
     const root: Segment = {
-      id: `s_${hash12(`${prepared.info.id}:seed-root`)}`,
+      id: "s1",
       title: "Session memory",
       summary: "Active V3 observations awaiting hierarchical organization.",
       childIds: [next.root.id, ...observations.map((item) => item.id)],
@@ -362,6 +360,7 @@ function appendFixedBatch(tree: MemoryTree, prepared: Prepared, batch: V3Observa
     next.segmentsById.set(root.id, root);
     for (const observation of observations) next.parentByChildId.set(observation.id, root.id);
   }
+  next.allocation = fixtureAllocation([...next.observationsById.values(), ...next.segmentsById.values()], next.allocation);
   next.observationBatchesSinceSegmentation++;
   return next;
 }
@@ -373,13 +372,11 @@ async function segmentOnce(args: {
   apiKey: string;
   tree: MemoryTree;
   callNumber: number;
-  nextSegmentId: () => SegmentId;
 }): Promise<{ tree: MemoryTree; warnings: string[]; usage: any }> {
   const response = await responseCall(args.apiKey, args.level, args.tree);
   const result = applyObserverProposal(args.tree, response.proposal, args.prepared.branch, {
     allowedSourceEntryIds: [],
     segmentRequested: true,
-    createSegmentId: args.nextSegmentId,
   });
   const tree = { ...result.tree, observationBatchesSinceSegmentation: result.warnings.length > 0 ? 1 : 0 };
   return {
@@ -393,14 +390,12 @@ async function generateProgressive(prepared: Prepared, level: Level, apiKey: str
   let tree = emptyTree();
   const warnings: string[] = [];
   const usage = { inputTokens: 0, outputTokens: 0 };
-  let segmentCounter = 0;
   let rounds = 0;
-  const nextSegmentId = () => `s_${hash12(`${prepared.info.id}:${level}:progressive:${segmentCounter++}`)}` as SegmentId;
   for (const batch of prepared.activeBatches) {
     tree = appendFixedBatch(tree, prepared, batch);
     if (tree.observationBatchesSinceSegmentation < 2 || !tree.root || "content" in tree.root) continue;
     rounds++;
-    const result = await segmentOnce({ prepared, level, mode: "progressive", apiKey, tree, callNumber: rounds, nextSegmentId });
+    const result = await segmentOnce({ prepared, level, mode: "progressive", apiKey, tree, callNumber: rounds });
     tree = result.tree;
     warnings.push(...result.warnings);
     usage.inputTokens += Number(result.usage.input_tokens ?? 0);
@@ -408,7 +403,7 @@ async function generateProgressive(prepared: Prepared, level: Level, apiKey: str
   }
   if (tree.root && "childIds" in tree.root) {
     rounds++;
-    const result = await segmentOnce({ prepared, level, mode: "progressive", apiKey, tree, callNumber: rounds, nextSegmentId });
+    const result = await segmentOnce({ prepared, level, mode: "progressive", apiKey, tree, callNumber: rounds });
     tree = result.tree;
     warnings.push(...result.warnings);
     usage.inputTokens += Number(result.usage.input_tokens ?? 0);
@@ -473,7 +468,6 @@ async function generateRawV4(prepared: Prepared, level: Level, apiKey: string): 
 
 async function generateDirect(prepared: Prepared, level: Level, apiKey: string): Promise<Generated> {
   const usage = { inputTokens: 0, outputTokens: 0 };
-  let segmentCounter = 0;
   const result = await segmentOnce({
     prepared,
     level,
@@ -481,7 +475,6 @@ async function generateDirect(prepared: Prepared, level: Level, apiKey: string):
     apiKey,
     tree: structuredClone(prepared.seed),
     callNumber: 1,
-    nextSegmentId: () => `s_${hash12(`${prepared.info.id}:${level}:direct:${segmentCounter++}`)}` as SegmentId,
   });
   usage.inputTokens += Number(result.usage.input_tokens ?? 0);
   usage.outputTokens += Number(result.usage.output_tokens ?? 0);
@@ -492,13 +485,11 @@ async function generateIterative(prepared: Prepared, level: Level, apiKey: strin
   let tree = structuredClone(prepared.seed) as MemoryTree;
   const warnings: string[] = [];
   const usage = { inputTokens: 0, outputTokens: 0 };
-  let segmentCounter = 0;
   let rounds = 0;
-  const nextSegmentId = () => `s_${hash12(`${prepared.info.id}:${level}:posthoc-iterative:${segmentCounter++}`)}` as SegmentId;
   while (rounds < MAX_ROUNDS) {
     const before = topology(tree);
     rounds++;
-    const result = await segmentOnce({ prepared, level, mode: "posthoc-iterative", apiKey, tree, callNumber: rounds, nextSegmentId });
+    const result = await segmentOnce({ prepared, level, mode: "posthoc-iterative", apiKey, tree, callNumber: rounds });
     tree = result.tree;
     warnings.push(...result.warnings);
     usage.inputTokens += Number(result.usage.input_tokens ?? 0);
@@ -635,7 +626,7 @@ const generated = await mapLimit(tasks, 3, async ({ item, level, mode }) => {
 });
 for (const result of generated) {
   if (result.mode === "raw-v4") continue;
-  const expected = new Set(result.prepared.activeObservations.map((item) => item.id));
+  const expected = new Set(result.prepared.activeObservations.map((_item, index) => `o${index + 1}`));
   const actual = new Set(result.tree.observationsById.keys());
   if (expected.size !== actual.size || [...expected].some((id) => !actual.has(id))) {
     throw new Error(`Observation leaf mismatch for ${result.prepared.info.id}/${result.level}/${result.mode}`);

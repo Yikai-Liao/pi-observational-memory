@@ -1,4 +1,5 @@
-import { randomBytes } from "node:crypto";
+import { applyAllocation, emptyAllocation, highWaterAfter, replayAllocation } from "./allocation.js";
+import { MemoryTreeError } from "./error.js";
 import { getNode, validObservationContent, validSegmentSummary, validSegmentTitle } from "./node.js";
 import {
 	isNodeRecord,
@@ -20,12 +21,7 @@ import {
 	type TreeDiagnostic,
 } from "./types.js";
 
-export class MemoryTreeError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = "MemoryTreeError";
-	}
-}
+export { MemoryTreeError } from "./error.js";
 
 export type ProposalResult = {
 	data?: ObservationsRecordedEntryData;
@@ -43,6 +39,7 @@ export type ApplyProposalOptions = {
 
 function emptyTree(): MemoryTree {
 	return {
+		allocation: emptyAllocation(),
 		observationsById: new Map(),
 		segmentsById: new Map(),
 		parentByChildId: new Map(),
@@ -53,6 +50,7 @@ function emptyTree(): MemoryTree {
 
 function cloneTree(tree: MemoryTree): MemoryTree {
 	return {
+		allocation: tree.allocation,
 		observationsById: new Map(tree.observationsById),
 		segmentsById: new Map(tree.segmentsById),
 		root: tree.root,
@@ -60,16 +58,6 @@ function cloneTree(tree: MemoryTree): MemoryTree {
 		observationBatchesSinceSegmentation: tree.observationBatchesSinceSegmentation,
 		diagnostics: [...tree.diagnostics],
 	};
-}
-
-function uniqueId(prefix: "" | "s_", occupied: Set<string>): string {
-	for (;;) {
-		const id = `${prefix}${randomBytes(6).toString("hex")}`;
-		if (!occupied.has(id)) {
-			occupied.add(id);
-			return id;
-		}
-	}
 }
 
 function sourceRanks(entries: Entry[]): Map<string, number> {
@@ -143,7 +131,8 @@ function validateAndPublish(tree: MemoryTree, entries: Entry[], firstSeen: Map<N
 }
 
 export class MemoryTreeStore {
-	rebuild(entries: Entry[]): MemoryTree {
+	rebuild(entries: Entry[], allEntries: Entry[] = entries): MemoryTree {
+		const allocation = replayAllocation(allEntries);
 		let tree = emptyTree();
 		const firstSeen = new Map<NodeId, number>();
 		let seenCounter = 0;
@@ -161,6 +150,9 @@ export class MemoryTreeStore {
 				if (idsInEvent.has(record.id)) throw new MemoryTreeError(`entry ${entry.id} repeats node record ${record.id}`);
 				idsInEvent.add(record.id);
 				const prior = getNode(candidate, record.id);
+				if (!prior && allocation.birthEntryById.get(record.id) !== entry.id) {
+					throw new MemoryTreeError(`node ${record.id} was not created on this branch`);
+				}
 				if (prior && isSegment(prior) !== isSegment(record)) throw new MemoryTreeError(`node ${record.id} changed kind`);
 				if (!firstSeen.has(record.id)) firstSeen.set(record.id, seenCounter++);
 				if (isObservationRecord(record)) {
@@ -178,7 +170,7 @@ export class MemoryTreeStore {
 			} else if (newObservationCount > 0) candidate.observationBatchesSinceSegmentation++;
 			tree = validateAndPublish(candidate, entries, firstSeen);
 		}
-		return validateAndPublish(tree, entries, firstSeen);
+		return { ...validateAndPublish(tree, entries, firstSeen), allocation };
 	}
 }
 
@@ -200,10 +192,6 @@ type BuiltProposal = {
 	promoted: BuiltProposal[];
 };
 
-function collectIds(tree: MemoryTree): Set<string> {
-	return new Set([...tree.observationsById.keys(), ...tree.segmentsById.keys()]);
-}
-
 export function applyObserverProposal(
 	base: MemoryTree,
 	proposal: NodeProposal | null,
@@ -211,11 +199,12 @@ export function applyObserverProposal(
 	options: ApplyProposalOptions,
 ): ProposalResult {
 	const warnings: string[] = [];
-	const occupied = collectIds(base);
+	let observationSequence = BigInt(base.allocation.highWater.observation);
+	let segmentSequence = BigInt(base.allocation.highWater.segment);
 	const rootChildren = isSegment(base.root) ? base.root.childIds : base.root ? [base.root.id] : [];
 	const rootChildSet = new Set(rootChildren);
-	const createObservationId = options.createObservationId ?? (() => uniqueId("", occupied));
-	const createSegmentId = options.createSegmentId ?? (() => uniqueId("s_", occupied) as SegmentId);
+	const createObservationId = options.createObservationId ?? (() => `o${++observationSequence}`);
+	const createSegmentId = options.createSegmentId ?? (() => `s${++segmentSequence}` as SegmentId);
 	const sourcePositions = sourceRanks(entries);
 	const compareOrder = (a: ProposalOrder, b: ProposalOrder): number => a[0] - b[0] || a[1] - b[1];
 	const baseLeafPositions = new Map<NodeId, number>();
@@ -251,7 +240,6 @@ export function applyObserverProposal(
 				return emptyBuilt();
 			}
 			const observation: Observation = { id: createObservationId(), content: value.content.trim(), sourceEntryIds };
-			occupied.add(observation.id);
 			return {
 				id: observation.id,
 				order: [Math.min(...sourceEntryIds.map((id) => sourcePositions.get(id) ?? Number.MAX_SAFE_INTEGER)), newObservationPosition++],
@@ -290,7 +278,6 @@ export function applyObserverProposal(
 			return { id: existing.id, order, records, consumed, newObservations, promoted: flattened };
 		}
 		const segment: Segment = { id: createSegmentId(), title, summary, childIds };
-		occupied.add(segment.id);
 		return { id: segment.id, order, records: [...records, segment], consumed, newObservations, promoted: [] };
 	};
 
@@ -403,15 +390,17 @@ function eventResult(
 	const segmentCheck = options.segmentRequested ? (warnings.length > 0 ? "partial" : "complete") : "not_requested";
 	if (newObservations.length === 0 && !options.segmentRequested) return { tree, warnings };
 	if (newObservations.length > 0 && !options.coversUpToId) return { tree, warnings: [...warnings, "missing coverage marker"] };
+	const data: ObservationsRecordedEntryData = {
+		version: 2,
+		nodeRecords: records,
+		highWater: highWaterAfter(tree.allocation, records),
+		...(newObservations.length > 0 ? { coversUpToId: options.coversUpToId } : {}),
+		segmentCheck,
+		...(warnings.length > 0 ? { warnings } : {}),
+	};
 	return {
-		tree,
+		tree: { ...tree, allocation: applyAllocation(tree.allocation, data, "proposal") },
 		warnings,
-		data: {
-			version: 1,
-			nodeRecords: records,
-			...(newObservations.length > 0 ? { coversUpToId: options.coversUpToId } : {}),
-			segmentCheck,
-			...(warnings.length > 0 ? { warnings } : {}),
-		},
+		data,
 	};
 }

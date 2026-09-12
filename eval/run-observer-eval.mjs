@@ -1,3 +1,4 @@
+import { fixtureAllocation } from "./node-id-fixtures.mjs";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { OBSERVER_SYSTEM } from "../src/agents/observer/prompts.ts";
@@ -11,7 +12,7 @@ const model = process.env.EVAL_MODEL;
 const apiKey = process.env.API_KEY;
 const reasoning = process.env.EVAL_REASONING;
 const reportPath = process.env.EVAL_REPORT;
-if (!endpoint || !model || !apiKey || !reasoning) {
+if (!process.env.EVAL_VALIDATE_ONLY && (!endpoint || !model || !apiKey || !reasoning)) {
 	throw new Error("Set EVAL_ENDPOINT, EVAL_MODEL, EVAL_REASONING, and API_KEY");
 }
 
@@ -21,7 +22,7 @@ function buildTree(input) {
 	const observationsById = new Map(input.observations.map((node) => [node.id, node]));
 	const segmentsById = new Map(input.segments.map((node) => [node.id, node]));
 	const root = input.rootId ? observationsById.get(input.rootId) ?? segmentsById.get(input.rootId) : undefined;
-	return { observationsById, segmentsById, root, parentByChildId: new Map(), observationBatchesSinceSegmentation: 0, diagnostics: [] };
+	return { allocation: fixtureAllocation([...input.observations, ...input.segments]), observationsById, segmentsById, root, parentByChildId: new Map(), observationBatchesSinceSegmentation: 0, diagnostics: [] };
 }
 
 function sourceIds(test) {
@@ -201,6 +202,18 @@ async function run(test) {
 	const segmentEstimatedTokens = all.filter(({ node }) => node.type === "segment")
 		.reduce((total, { node }) => total + estimateStringTokens(`${node.title ?? ""}\n\n${node.summary ?? ""}`), 0);
 	return { name: test.name, passed: checked.failures.length === 0, failures: checked.failures, observationEstimatedTokens, segmentEstimatedTokens, proposal: checked.proposal };
+}
+
+if (process.env.EVAL_VALIDATE_ONLY) {
+  for (const test of cases) {
+    const tree = buildTree(test.tree);
+    buildObserverUserPrompt({ tree, chunk: test.source, segmentRequired: test.segmentRequired, successfulBatches: test.successfulBatches });
+    for (const id of [test.expect.rootId, ...(test.expect.refIds ?? [])].filter(Boolean)) {
+      if (!tree.allocation.birthEntryById.has(id)) throw new Error(`Unknown expected ID ${id}`);
+    }
+  }
+  console.log(`Validated ${cases.length} Observer fixtures and production prompts; no model requests.`);
+  process.exit(0);
 }
 
 const results = await Promise.all(cases.map(run));

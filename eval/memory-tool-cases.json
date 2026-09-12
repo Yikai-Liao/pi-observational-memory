@@ -7,16 +7,16 @@
   },
   {
     "name": "read-current-node-with-depth-controls",
-    "request": "Read memory node s_111111111111 from the current session only at depth 0, exclude the Segment summary, and return JSON.",
+    "request": "Read memory node s1 from the current session only at depth 0, exclude the Segment summary, and return JSON.",
     "tool": "om_read",
-    "args": { "nodeId": "s_111111111111", "depth": 0, "includeSummary": false, "format": "json" },
+    "args": { "nodeId": "s1", "depth": 0, "includeSummary": false, "format": "json" },
     "absent": ["sessionId", "outputPath"]
   },
   {
     "name": "export-exact-cross-session-subtree",
-    "request": "From exact session 01abc-session, export the complete subtree rooted at s_222222222222 as JSONL to reports/memory.jsonl.",
+    "request": "From exact session 01abc-session, export the complete subtree rooted at s2 as JSONL to reports/memory.jsonl.",
     "tool": "om_read",
-    "args": { "sessionId": "01abc-session", "nodeId": "s_222222222222", "depth": -1, "format": "jsonl", "outputPath": "reports/memory.jsonl" }
+    "args": { "sessionId": "01abc-session", "nodeId": "s2", "depth": -1, "format": "jsonl", "outputPath": "reports/memory.jsonl" }
   },
   {
     "name": "discover-default-local-sessions",
@@ -24,5 +24,44 @@
     "tool": "om_sessions",
     "args": {},
     "absent": ["path", "keywords"]
+  },
+  {
+    "name": "read-observation-short-id",
+    "request": "Read the stored Observation o38 from the current session as JSON.",
+    "tool": "om_read",
+    "args": {
+      "nodeId": "o38",
+      "format": "json"
+    },
+    "absent": [
+      "sessionId",
+      "outputPath"
+    ]
+  },
+  {
+    "name": "same-short-id-exact-session",
+    "request": "Both sessions alpha-session and beta-session contain s12. Read s12 from beta-session only at depth 0.",
+    "tool": "om_read",
+    "args": {
+      "sessionId": "beta-session",
+      "nodeId": "s12",
+      "depth": 0
+    },
+    "absent": [
+      "outputPath"
+    ]
+  },
+  {
+    "name": "copy-large-short-id-exactly",
+    "request": "Read memory Segment s9007199254740993 from the current session at depth 0. Copy the identifier exactly.",
+    "tool": "om_read",
+    "args": {
+      "nodeId": "s9007199254740993",
+      "depth": 0
+    },
+    "absent": [
+      "sessionId",
+      "outputPath"
+    ]
   }
 ]

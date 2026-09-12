@@ -4,9 +4,9 @@ import { isObservation, isSegment, SEGMENT_RENDERED_DETAILS, type MemoryTree, ty
 
 const INTRO = `These are your past working memories, organized as a Segment Tree.
 
-- Headings are Segments, and each \`[ID]\` is a node ID.
-- Numbered items are leaf Observations.
-- Older memories may retain only high-level summaries. Use \`om_read\` with a node ID to expand and review them if you need.`;
+- Headings are Segments. Collapsed Segments expose a short \`[sN]\` reference for expansion with \`om_read\`.
+- Numbered items are leaf Observations, each with a short \`[oN]\` reference. List numbers are only formatting.
+- References are stable within this Session. Use \`om_read\` with a reference to review stored memory; it does not retrieve raw conversation text.`;
 
 export type RenderedMemory = {
 	markdown: string;
@@ -22,7 +22,7 @@ function visit(tree: MemoryTree, node: Node, depth: number, memoryDepth: number,
 		return;
 	}
 
-	sections.push(`${"#".repeat(depth + 1)} [${node.id}] ${node.title}\n\n${node.summary}`);
+	sections.push(`${"#".repeat(depth + 1)} ${depth >= memoryDepth ? `[${node.id}] ` : ""}${node.title}\n\n${node.summary}`);
 	if (depth >= memoryDepth) return;
 
 	const children = node.childIds.map((id) => getNode(tree, id)).filter((child): child is Node => child !== undefined);
@@ -50,15 +50,18 @@ export function renderMemoryTree(tree: MemoryTree, memoryDepth: number): Rendere
 	const sections: string[] = [];
 	if (tree.root) visit(tree, tree.root, 0, memoryDepth, nodes, sections);
 	const markdown = sections.length > 0 ? `${INTRO}\n\n${sections.join("\n\n")}` : "";
+	const renderedIds = new Set(nodes.map((node) => node.id));
 	return {
 		markdown,
 		nodes,
 		estimatedTokens: estimateStringTokens(markdown),
 		details: {
 			type: SEGMENT_RENDERED_DETAILS,
-			version: 1,
+			version: 2,
 			memoryDepth,
 			renderedNodeIds: nodes.map((node) => node.id as NodeId),
+			exposedRefs: nodes.filter((node) => isObservation(node)
+				|| !node.childIds.some((id) => renderedIds.has(id))).map((node) => node.id),
 		},
 	};
 }

@@ -1,5 +1,5 @@
 import { getNode } from "./node.js";
-import { isObservation, type MemoryTree, type Node, type NodeId } from "./types.js";
+import { isNodeId, isObservation, type MemoryTree, type Node, type NodeId } from "./types.js";
 
 export type ObservationRead = {
 	kind: "observation";
@@ -39,7 +39,11 @@ function read(tree: MemoryTree, node: Node, depth: number, includeSummary: boole
 
 export function inspectNode(tree: MemoryTree, nodeId?: NodeId, depth = 1, includeSummary = true): NodeRead {
 	if (!Number.isInteger(depth) || depth < -1) throw new Error("depth must be -1 or a non-negative integer");
+	if (nodeId !== undefined && !isNodeId(nodeId)) throw new Error(`Invalid node ID ${nodeId}; expected an exact sN or oN reference`);
 	const node = nodeId ? getNode(tree, nodeId) : tree.root;
-	if (!node) throw new Error(nodeId ? `Memory node ${nodeId} was not found` : "No Segment Memory has been recorded yet");
+	if (!node) {
+		if (nodeId && tree.allocation.birthEntryById.has(nodeId)) throw new Error(`Memory node ${nodeId} does not belong to the current branch`);
+		throw new Error(nodeId ? `Unknown memory node reference ${nodeId}` : "No Segment Memory has been recorded yet");
+	}
 	return read(tree, node, depth, includeSummary);
 }

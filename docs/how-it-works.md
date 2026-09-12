@@ -6,7 +6,8 @@
 
 | Surface | Role |
 |---|---|
-| `session_start` | Capture Session identity/generation and validate active-branch memory. |
+| `session_start` | Capture identity/generation, initialize Fork watermarks, and validate memory. |
+| `session_before_fork` | Abort stale Observer work and capture source allocation watermarks. |
 | `session_tree` | Abort stale Observer work, increment generation, and validate the selected branch. |
 | `session_shutdown` | Abort Session-scoped work. |
 | `agent_start`, `turn_end` | Trigger due background Observer work. |
@@ -52,7 +53,7 @@ Input includes:
 - successful Observation batch count;
 - whether Segment grouping is required.
 
-Output is a recursive proposal. Code, not the model, generates new IDs.
+Output is a recursive proposal. Code assigns permanent `sN` / `oN` IDs. Observer input retains the Root ID for editing even when direct children are shown. Source entry IDs keep their original Pi values.
 
 ## Proposal normalization
 
@@ -71,13 +72,17 @@ The first transition from one Observation Root to a Segment Root is atomic. If a
 
 Persisted V4 events are trusted output of plugin code and are therefore strict, not best effort. For each event:
 
-1. validate the envelope and every node record;
+1. validate the version-2 envelope, decimal watermarks and every node record;
 2. apply Observation creations and Segment versions to a candidate projection;
 3. derive parent relationships and unique Root;
 4. detect missing/repeated/shared children, cycles, and unreachable nodes;
 5. verify chronological Observation leaf order;
-6. verify every Segment has at least two direct children and is shorter than those children;
+6. verify every Segment has at least two direct children;
 7. publish only after all checks pass.
+
+Segment non-expansion is a prompt/eval criterion, not a local token-estimate validation rule.
+
+Before branch replay, the whole Session ledger is replayed for allocation watermarks and node births. New IDs exceed the prior watermark, Observation IDs cannot be reused, and Segment updates must refer to nodes born on that branch. No branch switch or compaction rewinds these watermarks.
 
 Any malformed event or invalid final tree raises `MemoryTreeError`. Compact, commands, and tools do not consume the invalid projection.
 
@@ -94,15 +99,18 @@ Background segmentation becomes required when the next successful batch reaches 
 
 ## Concurrency and stale writes
 
-`Runtime.enqueueObserver` serializes background and forced work. A forced request queued behind a background request starts a new model call from the then-current branch; it never reuses the background result.
+`Runtime.enqueueObserver` serializes background, forced work, and Fork initialization. Session writers are checked for duplicate ownership within the process; the supported boundary is one Pi process and one active SessionManager per writable Session. This is not a cross-process lock. A forced request queued behind a background request starts a new model call from the then-current branch; it never reuses the background result.
 
 Each run captures Session ID and branch generation. Before append it verifies:
 
 - combined AbortSignal is not aborted;
 - Session ID is unchanged;
 - branch generation is unchanged;
+- the original source branch remains a prefix of the active branch;
 - source IDs still exist on the active branch;
 - existing refs still resolve in the freshly rebuilt tree.
+
+Nodes and their resulting watermarks share one ledger append. Pi updates its in-memory ledger before writing the file, and can defer the first flush until an assistant message. If append throws or cannot be confirmed, the manager is blocked from further memory reads/writes; reopening the saved Session recovers the committed state. Successful API calls do not supply an fsync guarantee.
 
 `session_tree` and `session_shutdown` abort in-flight work. Duplicate concurrent compaction hooks are cancelled rather than queued.
 
@@ -123,9 +131,11 @@ Forced Observer failure or invalid persisted memory returns `{ cancel: true }`. 
 
 For each visited Segment:
 
-1. render `#... [id] title` and summary;
-2. if depth allows, render direct Observation children as a numbered list;
+1. render the title and summary; include `[sN]` only if the Segment is collapsed at this view depth;
+2. if depth allows, render direct Observation children as a numbered list with permanent `[oN]` IDs;
 3. recursively render child Segments.
+
+Version-2 rendered details include all `renderedNodeIds`, including ancestors with hidden IDs, and `exposedRefs` lists only printed IDs.
 
 Direct Observations and child Segments each preserve their relative order. Repeated rendering of the same tree/depth is deterministic.
 
@@ -138,7 +148,11 @@ Direct Observations and child Segments each preserve their relative order. Repea
 - historical reads use the file's standard active branch;
 - parent Session IDs are resolved from exact parent file paths when possible, never guessed.
 
-`om_read` applies the same strict store as compaction. `depth: -1` expands the complete subtree. File output creates parent directories and returns path/line/byte metadata.
+Fork copies existing IDs and adds an `om.node-ids.inherited` event carrying source watermarks, including numbers allocated on branches outside copied ancestry. The metadata changes no memory, coverage, or cadence. An unfinished persisted Fork must be activated for initialization; historical tools do not initialize or modify it. In-memory Forks carry their snapshot across Pi runtime replacement. Missing source information is an initialization error.
+
+`om_read` accepts only exact short IDs in the selected Session; unknown IDs and IDs belonging to another branch produce different errors. It applies the same strict store as compaction. `depth: -1` expands the complete subtree. Child previews retain IDs while their expanded parent heading hides its ID; the limited `om_sessions` navigation list retains Root and preview IDs. JSON/JSONL use the same short IDs for complete parent/child structure and preserve source provenance. File output creates parent directories and returns path/line/byte metadata.
+
+See [the node-ID design](node-reference-design.md) for schema, lifecycle boundaries, and regression coverage.
 
 ## Failure behavior
 

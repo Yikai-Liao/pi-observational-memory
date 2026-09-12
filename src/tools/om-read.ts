@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { StringEnum, Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI, truncateHead } from "@earendil-works/pi-coding-agent";
 import { exportMemory, type ExportFormat, type SessionExportIdentity } from "../memory-tree/export.js";
-import { MemoryTreeStore } from "../memory-tree/store.js";
+import { readSessionMemory } from "../sessions/memory.js";
 import type { Entry, MemoryTree } from "../memory-tree/types.js";
 import { SessionCatalog } from "../sessions/catalog.js";
 
@@ -12,7 +12,7 @@ export const OM_READ_GUIDELINE = "Expand memory when its details matter to the t
 
 export const OM_READ_SCHEMA = Type.Object({
 	sessionId: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Null()], { description: "Known exact Session ID from the user or om_sessions. Omit or use null for the current active branch; never invent an ID, write 'current', or substitute a node ID." })),
-	nodeId: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Null()], { description: "Known exact node ID from the user, rendered memory, or tool results. Omit or use null for the Root." })),
+	nodeId: Type.Optional(Type.Union([Type.String({ pattern: "^[so][1-9][0-9]*$" }), Type.Null()], { description: "Exact Session-scoped short node ID (s12 for a Segment, o38 for an Observation) from the user, rendered memory, or tool results. Omit or use null for the Root. Reads stored memory, not raw conversation text." })),
 	depth: Type.Optional(Type.Integer({ minimum: -1, description: "Descendant depth; -1 means the complete subtree. Default 1." })),
 	includeSummary: Type.Optional(Type.Boolean({ description: "Include Segment summaries. Default true." })),
 	format: Type.Optional(StringEnum(["markdown", "json", "jsonl"] as const)),
@@ -49,7 +49,7 @@ export function registerOmReadTool(pi: ExtensionAPI, catalog = new SessionCatalo
 			let identity: SessionExportIdentity;
 			const currentSessionId = ctx.sessionManager.getSessionId?.();
 			if (!params.sessionId || params.sessionId === currentSessionId) {
-				tree = new MemoryTreeStore().rebuild(ctx.sessionManager.getBranch() as Entry[]);
+				tree = readSessionMemory(ctx.sessionManager);
 				identity = { sessionId: currentSessionId ?? "ephemeral", name: ctx.sessionManager.getSessionName?.(), cwd: ctx.cwd };
 			} else {
 				const located = await catalog.locate(params.sessionId);

@@ -1,10 +1,13 @@
+import { emptyAllocation } from "../src/memory-tree/allocation.js";
 import { describe, expect, it } from "vitest";
 import { ObserverProtocolError, ObserverStreamError, runObserver } from "../src/agents/observer/agent.js";
 import { OBSERVER_SYSTEM } from "../src/agents/observer/prompts.js";
+import { currentTreeText } from "../src/agents/observer/protocol.js";
+import { MemoryTreeStore } from "../src/memory-tree/store.js";
 import type { MemoryTree } from "../src/memory-tree/types.js";
 
 function emptyTree(): MemoryTree {
-	return { observationsById: new Map(), segmentsById: new Map(), parentByChildId: new Map(), observationBatchesSinceSegmentation: 0, diagnostics: [] };
+	return { allocation: emptyAllocation(), observationsById: new Map(), segmentsById: new Map(), parentByChildId: new Map(), observationBatchesSinceSegmentation: 0, diagnostics: [] };
 }
 
 function fakeAgentLoop(handler: (prompts: any[], context: any, config: any) => Promise<void> | void, events: any[] = []): any {
@@ -24,6 +27,16 @@ const args = {
 };
 
 describe("runObserver", () => {
+	it("exposes the Root short ID for editing even with visible direct children", () => {
+		const tree = new MemoryTreeStore().rebuild([{ type: "custom", id: "memory", customType: "om.observations.recorded", data: {
+			version: 2, highWater: { observation: "2", segment: "1" }, coversUpToId: "source", segmentCheck: "complete",
+			nodeRecords: [{ id: "o1", content: "First fact.", sourceEntryIds: ["source"] }, { id: "o2", content: "Second fact.", sourceEntryIds: ["source"] },
+				{ id: "s1", title: "Work", summary: "Done.", childIds: ["o1", "o2"] }],
+		} }]);
+		expect(currentTreeText(tree)).toContain("Root Segment: [s1]");
+		expect(currentTreeText(tree)).toContain("- Observation [o1]");
+		expect(currentTreeText(tree)).toContain("- Observation [o2]");
+	});
 	it("submits exactly one recursive tree proposal", async () => {
 		let config: any;
 		const loop = fakeAgentLoop(async (_prompts, context, seenConfig) => {

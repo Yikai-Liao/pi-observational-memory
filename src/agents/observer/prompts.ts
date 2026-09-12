@@ -98,7 +98,7 @@ When an Observation references specific things, preserve the distinguishing deta
 If a detail is non-obvious from code or git history, it belongs in the Observation. If it is trivially re-derivable, it does not.
 
 Recursive tree contract:
-- { type: "ref", id } references one unchanged existing direct child of the current Root. Use only IDs printed in CURRENT TREE.
+- { type: "ref", id } references one unchanged existing direct child of the current Root. Copy its exact short ID (sN for Segments, oN for Observations) from CURRENT TREE. These IDs are permanent within this Session; never renumber them. Source entry IDs are separate and must remain unchanged.
 - { type: "observation", content, sourceEntryIds } creates one new Observation. New Observations never carry IDs; code generates them.
 - { type: "segment", title, summary, children } creates one new Segment. New Segments never carry IDs; code generates them after their children.
 - { type: "segment", id, title, summary, children } updates the existing Root Segment. The id MUST equal the current Root Segment ID. Never update another existing Segment.

@@ -1,5 +1,6 @@
 import { type Config, DEFAULTS, loadConfig } from "./config.js";
 import { debugLog } from "./debug-log.js";
+import { SessionWriter } from "./sessions/writer.js";
 
 export type ResolveResult =
 	| { ok: true; model: unknown; apiKey?: string; headers?: Record<string, string>; env?: Record<string, string>; baseUrl?: string }
@@ -97,6 +98,8 @@ export interface LaunchCtx {
 }
 
 export class Runtime {
+	readonly writer = new SessionWriter();
+	sessionInitializationError: string | undefined;
 	config: Config = { ...DEFAULTS };
 	configLoaded = false;
 	consolidationInFlight = false;
@@ -283,6 +286,8 @@ export class Runtime {
 	}
 
 	beginSession(sessionId: string | undefined): void {
+		this.writer.release();
+		this.sessionInitializationError = undefined;
 		this.sessionAbort.abort();
 		this.sessionAbort = new AbortController();
 		this.sessionId = sessionId;
@@ -298,6 +303,7 @@ export class Runtime {
 	}
 
 	shutdownSession(): void {
+		this.writer.release();
 		this.sessionAbort.abort();
 		this.sessionId = undefined;
 		this.observerEmptyBackoff = undefined;

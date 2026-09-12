@@ -4,6 +4,8 @@
 > 目标版本：Segment Memory V4
 > 依据：`ChatGPT - segment mem 头脑风暴.md`、`om_example.txt`、`segment_memory_tree.md`，并对照当前 V3 实现与 Pi 扩展、Session、Compaction API
 
+当前 ID 与展示行为见 [Session 内稳定短 ID 与记忆展示](node-reference-design.md)（已实现）。节点直接使用 Session 内唯一的 `sN/oN`，不再保留随机 NodeId 或双层映射；本文保留最初架构推导，完整随机 ID 示例属于早期方案。
+
 ## 1. 目标与范围
 
 本次改造要把当前的“Observations + Reflections + Drop”记忆池，演化成一个**以 Observation 为叶子、以事后封闭的工作区间为 Segment、以当前唯一无 parent 节点为 Root、按深度渲染的有序树**。

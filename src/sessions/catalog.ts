@@ -2,7 +2,7 @@ import { resolve, relative } from "node:path";
 import { SessionManager, type SessionInfo } from "@earendil-works/pi-coding-agent";
 import { maxTreeDepth } from "../memory-tree/render.js";
 import { nodePreview } from "../memory-tree/node.js";
-import { MemoryTreeStore } from "../memory-tree/store.js";
+import { readSessionMemory } from "./memory.js";
 import { isSegment, type Entry, type MemoryTree } from "../memory-tree/types.js";
 
 export type SessionSummary = {
@@ -51,7 +51,7 @@ export class SessionCatalog {
 		const info = matches[0]!;
 		const manager = this.sessions.open(info.path);
 		const entries = manager.getBranch() as Entry[];
-		const tree = new MemoryTreeStore().rebuild(entries);
+		const tree = readSessionMemory(manager);
 		if (!tree.root) throw new Error(`Session ${sessionId} has no Segment Memory`);
 		const parentSessionId = info.parentSessionPath ? all.find((item) => resolve(item.path) === resolve(info.parentSessionPath!))?.id : undefined;
 		return { info, tree, entries, name: manager.getSessionName(), parentSessionId };
@@ -64,7 +64,7 @@ export class SessionCatalog {
 		for (const info of all.filter((item) => item.cwd && withinPath(item.cwd, path))) {
 			try {
 				const manager = this.sessions.open(info.path);
-				const tree = new MemoryTreeStore().rebuild(manager.getBranch() as Entry[]);
+				const tree = readSessionMemory(manager);
 				if (!tree.root) continue;
 				if (keywords.length > 0) {
 					if (!isSegment(tree.root)) continue;
@@ -87,7 +87,7 @@ export class SessionCatalog {
 					segmentCount: tree.segmentsById.size,
 					maxDepth: maxTreeDepth(tree),
 					topLevel: childIds.slice(0, 3).flatMap((id) => {
-						const node = tree.observationsById.get(id) ?? tree.segmentsById.get(id as `s_${string}`);
+						const node = tree.observationsById.get(id) ?? tree.segmentsById.get(id as `s${string}`);
 						return node ? [{ nodeId: node.id, kind: isSegment(node) ? "segment" as const : "observation" as const, preview: nodePreview(node).slice(0, 240) }] : [];
 					}),
 				});
