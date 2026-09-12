@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { recorded } from "./fixtures/node-records.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULTS } from "../src/config.js";
 import { registerConsolidationTrigger, runObserverOnce } from "../src/hooks/consolidation-trigger.js";
 import { MemoryTreeStore } from "../src/memory-tree/store.js";
@@ -7,6 +8,9 @@ import { Runtime } from "../src/runtime.js";
 
 const { runObserver } = vi.hoisted(() => ({ runObserver: vi.fn() }));
 vi.mock("../src/agents/observer/agent.js", () => ({ runObserver: (...args: unknown[]) => runObserver(...args) }));
+
+const runtimes: Runtime[] = [];
+afterEach(() => { for (const runtime of runtimes.splice(0)) runtime.shutdownSession(); });
 
 function setup(initial: Entry[] = []) {
 	let entries = [...initial];
@@ -26,9 +30,10 @@ function setup(initial: Entry[] = []) {
 		hasUI: false,
 		model: { provider: "test", id: "model", contextWindow: 100_000 },
 		modelRegistry: { getApiKeyAndHeaders: vi.fn(async () => ({ ok: true, apiKey: "key" })), isUsingOAuth: vi.fn(() => false) },
-		sessionManager: { getSessionId: () => "session-a", getBranch: () => entries },
+		sessionManager: { getSessionId: () => "session-a", getEntries: () => entries, getBranch: () => entries },
 	};
 	const runtime = new Runtime();
+	runtimes.push(runtime);
 	runtime.config = { ...DEFAULTS, segmentEveryObserverRuns: 2 };
 	runtime.configLoaded = true;
 	runtime.beginSession("session-a");
@@ -39,19 +44,19 @@ function setup(initial: Entry[] = []) {
 		appended,
 		entries: () => entries,
 		setEntries: (value: Entry[]) => { entries = value; },
-		emit: (event: string) => handlers.get(event)?.({}, ctx),
+		emit: (event: string, payload: unknown = {}) => handlers.get(event)?.(payload, ctx),
 	};
 }
 
 const raw = (id: string, text: string): Entry => ({ type: "message", id, message: { role: "user", content: [{ type: "text", text }] } });
 
 describe("single Observer pipeline", () => {
-	beforeEach(() => runObserver.mockReset());
+	beforeEach(() => { runObserver.mockReset(); });
 
-	it("wires session lifecycle events to Runtime invalidation and shutdown", () => {
+	it("wires session lifecycle events to Runtime invalidation and shutdown", async () => {
 		const state = setup();
 		registerConsolidationTrigger(state.pi, state.runtime);
-		state.emit("session_start");
+		await state.emit("session_start");
 		expect(state.runtime.sessionId).toBe("session-a");
 		const beforeTree = state.runtime.branchGeneration;
 		const signal = state.runtime.sessionAbort.signal;
@@ -90,17 +95,65 @@ describe("single Observer pipeline", () => {
 		await runObserverOnce(state.pi, state.runtime, state.ctx, { forced: false });
 		expect(state.appended).toHaveLength(2);
 		const tree = new MemoryTreeStore().rebuild(state.entries());
-		expect(tree.root?.id).toMatch(/^s_[a-f0-9]{12}$/);
+		expect(tree.root?.id).toMatch(/^s[1-9][0-9]*$/);
 		expect((tree.root as any).childIds).toContain(firstId);
 		expect(tree.observationBatchesSinceSegmentation).toBe(0);
 		expect(runObserver).toHaveBeenCalledTimes(2);
 	});
 
+	it("serializes concurrent requests and rereads allocation state before the second model call", async () => {
+		const state = setup([raw("raw-1", "First decision.")]);
+		let release!: () => void;
+		runObserver.mockImplementationOnce(async () => {
+			await new Promise<void>((resolve) => { release = resolve; });
+			state.setEntries([...state.entries(), raw("raw-2", "Second decision.")]);
+			return { tree: { type: "observation", content: "First decision.", sourceEntryIds: ["raw-1"] } };
+		}).mockImplementationOnce(async ({ tree }) => {
+			expect(tree.root.id).toBe("o1");
+			return { tree: { type: "segment", title: "Work", summary: "Decisions.", children: [
+				{ type: "ref", id: "o1" }, { type: "observation", content: "Second decision.", sourceEntryIds: ["raw-2"] },
+			] } };
+		});
+		const first = runObserverOnce(state.pi, state.runtime, state.ctx, { forced: false });
+		const second = runObserverOnce(state.pi, state.runtime, state.ctx, { forced: false });
+		await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+		expect(runObserver).toHaveBeenCalledTimes(1);
+		release();
+		await Promise.all([first, second]);
+		expect(state.appended.map((entry) => entry.data.highWater)).toEqual([
+			{ observation: "1", segment: "0" }, { observation: "2", segment: "1" },
+		]);
+	});
+
+	it("rejects source branch replacement even without a generation event", async () => {
+		const state = setup([raw("raw-1", "First decision.")]);
+		runObserver.mockImplementationOnce(async () => {
+			state.setEntries([raw("other-branch", "Different ancestry."), ...state.entries()]);
+			return { tree: { type: "observation", content: "First decision.", sourceEntryIds: ["raw-1"] } };
+		});
+		await expect(runObserverOnce(state.pi, state.runtime, state.ctx, { forced: false })).rejects.toThrow(/source branch changed/);
+		expect(state.appended).toHaveLength(0);
+	});
+
+	it("cancels queued startup after Session shutdown and cancels Fork on unreadable source IDs", async () => {
+		const state = setup();
+		registerConsolidationTrigger(state.pi, state.runtime);
+		const starting = state.emit("session_start");
+		state.emit("session_shutdown");
+		await starting;
+		expect(state.runtime.sessionId).toBeUndefined();
+		expect(state.appended).toHaveLength(0);
+		await state.emit("session_start");
+		state.setEntries([{ type: "custom", id: "bad", customType: OM_OBSERVATIONS_RECORDED, data: {} }]);
+		await expect(state.emit("session_before_fork")).resolves.toEqual({ cancel: true });
+		expect(state.appended).toHaveLength(0);
+	});
+
 	it("forces Observer for an existing Root even when there is no pending source", async () => {
-		const a = { id: "aaaaaaaaaaaa", content: "A durable architecture observation with enough detail to persist.", sourceEntryIds: ["raw-a"] };
-		const b = { id: "bbbbbbbbbbbb", content: "A second durable implementation observation with enough detail to persist.", sourceEntryIds: ["raw-b"] };
-		const root = { id: "s_111111111111" as const, title: "Completed work", summary: "Summarized completed work.", childIds: [a.id, b.id] };
-		const memory: Entry = { type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: { version: 1, nodeRecords: [a, b, root], coversUpToId: "raw-b", segmentCheck: "complete" } };
+		const a = { id: "o1", content: "A durable architecture observation with enough detail to persist.", sourceEntryIds: ["raw-a"] };
+		const b = { id: "o2", content: "A second durable implementation observation with enough detail to persist.", sourceEntryIds: ["raw-b"] };
+		const root = { id: "s1" as const, title: "Completed work", summary: "Summarized completed work.", childIds: [a.id, b.id] };
+		const memory: Entry = { type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: recorded({ nodeRecords: [a, b, root], coversUpToId: "raw-b", segmentCheck: "complete" }) };
 		const state = setup([raw("raw-a", "a"), raw("raw-b", "b"), memory]);
 		runObserver.mockImplementationOnce(async ({ segmentRequired, chunk }) => {
 			expect(segmentRequired).toBe(true);
@@ -113,10 +166,10 @@ describe("single Observer pipeline", () => {
 	});
 
 	it("forced runs ignore the background chunk cap and complete segmentation with no new Observation", async () => {
-		const a = { id: "aaaaaaaaaaaa", content: "A long durable observation describing completed architecture work and its important result.", sourceEntryIds: ["raw-a"] };
-		const b = { id: "bbbbbbbbbbbb", content: "A second durable observation describing implementation work and its verified result.", sourceEntryIds: ["raw-b"] };
-		const root = { id: "s_111111111111" as const, title: "Completed work", summary: "Summarized completed work.", childIds: [a.id, b.id] };
-		const memory: Entry = { type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: { version: 1, nodeRecords: [a, b, root], coversUpToId: "raw-b", segmentCheck: "complete" } };
+		const a = { id: "o1", content: "A long durable observation describing completed architecture work and its important result.", sourceEntryIds: ["raw-a"] };
+		const b = { id: "o2", content: "A second durable observation describing implementation work and its verified result.", sourceEntryIds: ["raw-b"] };
+		const root = { id: "s1" as const, title: "Completed work", summary: "Summarized completed work.", childIds: [a.id, b.id] };
+		const memory: Entry = { type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: recorded({ nodeRecords: [a, b, root], coversUpToId: "raw-b", segmentCheck: "complete" }) };
 		const huge = `HEAD-${"x".repeat(2500)}-MIDDLE-MARKER-${"x".repeat(2500)}-TAIL`;
 		const state = setup([raw("raw-a", "a"), raw("raw-b", "b"), memory, raw("raw-c", huge)]);
 		state.runtime.config = { ...state.runtime.config, observerChunkMaxTokens: 256 };
@@ -177,10 +230,10 @@ describe("single Observer pipeline", () => {
 	});
 
 	it("preserves segmentation due after a partial segmentation event", async () => {
-		const a = { id: "aaaaaaaaaaaa", content: "A durable architecture observation with enough detail to persist.", sourceEntryIds: ["raw-a"] };
-		const b = { id: "bbbbbbbbbbbb", content: "A second durable implementation observation with enough detail to persist.", sourceEntryIds: ["raw-b"] };
-		const root = { id: "s_111111111111" as const, title: "Completed work", summary: "Summarized completed work.", childIds: [a.id, b.id] };
-		const memory: Entry = { type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: { version: 1, nodeRecords: [a, b, root], coversUpToId: "raw-b", segmentCheck: "complete" } };
+		const a = { id: "o1", content: "A durable architecture observation with enough detail to persist.", sourceEntryIds: ["raw-a"] };
+		const b = { id: "o2", content: "A second durable implementation observation with enough detail to persist.", sourceEntryIds: ["raw-b"] };
+		const root = { id: "s1" as const, title: "Completed work", summary: "Summarized completed work.", childIds: [a.id, b.id] };
+		const memory: Entry = { type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: recorded({ nodeRecords: [a, b, root], coversUpToId: "raw-b", segmentCheck: "complete" }) };
 		const state = setup([raw("raw-a", "a"), raw("raw-b", "b"), memory, raw("raw-c", "new")]);
 		state.runtime.config = { ...state.runtime.config, segmentEveryObserverRuns: 1 };
 		runObserver.mockImplementationOnce(async ({ segmentRequired, tree }) => {
@@ -204,8 +257,8 @@ describe("single Observer pipeline", () => {
 	});
 
 	it("uses provider context growth for Observer scheduling when raw growth is small", async () => {
-		const observation = { id: "aaaaaaaaaaaa", content: "A durable prior observation with enough detail to persist.", sourceEntryIds: ["raw-a"] };
-		const memory: Entry = { type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: { version: 1, nodeRecords: [observation], coversUpToId: "raw-a", segmentCheck: "not_requested" } };
+		const observation = { id: "o1", content: "A durable prior observation with enough detail to persist.", sourceEntryIds: ["raw-a"] };
+		const memory: Entry = { type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: recorded({ nodeRecords: [observation], coversUpToId: "raw-a", segmentCheck: "not_requested" }) };
 		const assistant: Entry = { type: "message", id: "assistant-1", message: { role: "assistant", content: "done", stopReason: "end_turn", usage: { totalTokens: 100 } } };
 		const state = setup([assistant, raw("raw-a", "a"), memory, raw("raw-b", "tiny")]);
 		state.runtime.config = { ...state.runtime.config, observeAfterTokens: 10 };

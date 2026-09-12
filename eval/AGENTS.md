@@ -14,6 +14,11 @@ The first two require `EVAL_ENDPOINT`, `EVAL_MODEL`, `EVAL_REASONING`, and
 defaults and load project `.env` if `API_KEY` is absent; inspect their controls
 before running them.
 
+`EVAL_VALIDATE_ONLY=1` runs the Observer, memory-tools and hierarchy fixture/schema checks
+without model requests or credentials; it does not measure model behavior.
+Synthetic V4 seeds use `sN/oN` IDs. `node-id-fixtures.mjs` adapts frozen hierarchy
+inputs for evaluation only, not runtime migration.
+
 `hierarchy-results.tsv` records accepted rules and failed alternatives;
 `real-session-hierarchy-targets.md` defines semantic targets, not exact wording.
 V3-named fixtures are frozen evaluation inputs, not runtime compatibility support.

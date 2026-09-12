@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolveCompactAfterTokens } from "../config.js";
 import { maxTreeDepth, renderMemoryTree } from "../memory-tree/render.js";
-import { MemoryTreeStore } from "../memory-tree/store.js";
+import { readSessionMemory } from "../sessions/memory.js";
 import type { Entry } from "../memory-tree/types.js";
 import { rawTokensSinceLastCompaction, rawTokensSinceObservationCoverage } from "../progress.js";
 import type { Runtime } from "../runtime.js";
@@ -17,7 +17,7 @@ export function registerStatusCommand(pi: ExtensionAPI, runtime: Runtime): void 
 			const entries = ctx.sessionManager.getBranch() as Entry[];
 			let tree;
 			try {
-				tree = new MemoryTreeStore().rebuild(entries);
+				tree = readSessionMemory(ctx.sessionManager);
 			} catch (error) {
 				ctx.ui.notify(`── Diagnostics ──\nTree validation: invalid\n${error instanceof Error ? error.message : String(error)}`, "warning");
 				return;
@@ -25,7 +25,7 @@ export function registerStatusCommand(pi: ExtensionAPI, runtime: Runtime): void 
 			const rendered = renderMemoryTree(tree, runtime.config.memoryDepth);
 			const flatTokens = estimateStringTokens([...tree.observationsById.values()].map((item) => `[${item.id}] ${item.content}`).join("\n"));
 			const rootChildren = tree.root && "childIds" in tree.root ? tree.root.childIds : [];
-			const rootSegments = rootChildren.filter((id) => tree.segmentsById.has(id as `s_${string}`)).length;
+			const rootSegments = rootChildren.filter((id) => tree.segmentsById.has(id as `s${string}`)).length;
 			const observationProgress = rawTokensSinceObservationCoverage(entries);
 			const compactionProgress = rawTokensSinceLastCompaction(entries);
 			const threshold = resolveCompactAfterTokens(runtime.config, ctx.model?.contextWindow);

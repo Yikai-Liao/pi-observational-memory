@@ -1,12 +1,9 @@
 import type { ExtensionAPI, ExtensionContext, SessionBeforeCompactEvent } from "@earendil-works/pi-coding-agent";
 import { debugLog } from "../debug-log.js";
 import { renderMemoryTree } from "../memory-tree/render.js";
-import { MemoryTreeStore } from "../memory-tree/store.js";
-import type { Entry } from "../memory-tree/types.js";
+import { readSessionMemory } from "../sessions/memory.js";
 import type { Runtime } from "../runtime.js";
 import { runObserverOnce } from "./consolidation-trigger.js";
-
-const store = new MemoryTreeStore();
 
 export function registerCompactionHook(pi: ExtensionAPI, runtime: Runtime): void {
 	pi.on("session_before_compact", async (event: SessionBeforeCompactEvent, ctx: ExtensionContext) => {
@@ -27,7 +24,7 @@ export function registerCompactionHook(pi: ExtensionAPI, runtime: Runtime): void
 
 			let tree;
 			try {
-				tree = store.rebuild(ctx.sessionManager.getBranch() as Entry[]);
+				tree = readSessionMemory(ctx.sessionManager);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				if (ctx.hasUI) ctx.ui.notify(`Observational memory: compaction cancelled because the memory tree is invalid: ${message}`, "warning");

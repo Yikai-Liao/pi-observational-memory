@@ -1,3 +1,4 @@
+import { recorded } from "./fixtures/node-records.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULTS } from "../src/config.js";
 import { registerCompactionHook } from "../src/hooks/compaction-hook.js";
@@ -18,19 +19,19 @@ function setup(entries: Entry[]) {
 	} as any;
 	registerCompactionHook(pi, runtime);
 	const notify = vi.fn();
-	const ctx = { cwd: "/project", hasUI: true, ui: { notify }, sessionManager: { getBranch: () => entries } };
+	const ctx = { cwd: "/project", hasUI: true, ui: { notify }, sessionManager: { getEntries: () => entries, getBranch: () => entries } };
 	const event = { preparation: { firstKeptEntryId: "raw-b", tokensBefore: 1000 }, signal: new AbortController().signal };
 	return { hook, runtime, ctx, event, notify };
 }
 
 const validEntries = (): Entry[] => {
-	const a = { id: "aaaaaaaaaaaa", content: "Investigated a detailed architecture issue and recorded the durable technical findings.", sourceEntryIds: ["raw-a"] };
-	const b = { id: "bbbbbbbbbbbb", content: "Implemented the architecture change and verified the detailed behavior with tests.", sourceEntryIds: ["raw-b"] };
-	const root = { id: "s_111111111111", title: "Architecture implementation", summary: "Investigated and implemented the architecture.", childIds: [a.id, b.id] };
+	const a = { id: "o1", content: "Investigated a detailed architecture issue and recorded the durable technical findings.", sourceEntryIds: ["raw-a"] };
+	const b = { id: "o2", content: "Implemented the architecture change and verified the detailed behavior with tests.", sourceEntryIds: ["raw-b"] };
+	const root = { id: "s1", title: "Architecture implementation", summary: "Investigated and implemented the architecture.", childIds: [a.id, b.id] };
 	return [
 		{ type: "message", id: "raw-a", message: { role: "user", content: "a" } },
 		{ type: "message", id: "raw-b", message: { role: "user", content: "b" } },
-		{ type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: { version: 1, nodeRecords: [a, b, root], coversUpToId: "raw-b", segmentCheck: "complete" } },
+		{ type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: recorded({ nodeRecords: [a, b, root], coversUpToId: "raw-b", segmentCheck: "complete" }) },
 	];
 };
 
@@ -46,8 +47,8 @@ describe("Segment Memory compaction hook", () => {
 			signal: state.event.signal,
 		});
 		expect(result.compaction.firstKeptEntryId).toBe("raw-b");
-		expect(result.compaction.summary).toContain("# [s_111111111111] Architecture implementation");
-		expect(result.compaction.summary).toContain("[aaaaaaaaaaaa]");
+		expect(result.compaction.summary).toContain("# Architecture implementation");
+		expect(result.compaction.summary).toContain("[o1]");
 		expect(result.compaction.details).toMatchObject({ type: "om.segment-tree.rendered", memoryDepth: 1 });
 	});
 

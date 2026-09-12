@@ -20,6 +20,7 @@ Repeated free-form summaries lose decisions, failed approaches, exact errors, an
 - **Observation** — one durable fact or event, with exact Pi source entry IDs.
 - **Segment** — a title, summary, and at least two ordered Observation/Segment children.
 - **Root** — the unique node without a parent. The first Observation is Root; the second creates a normal Segment Root.
+- **Node IDs** — stable Session-scoped `sN` / `oN` IDs are used throughout storage, tools, and exports. Allocation watermarks cover every branch and are inherited by Fork.
 - **Tree projection** — append-only `om.observations.recorded` entries are replayed from the active Pi branch. Later records update the same logical Segment ID.
 
 Example compacted memory at the recommended `memoryDepth: 3`:
@@ -27,32 +28,34 @@ Example compacted memory at the recommended `memoryDepth: 3`:
 ```md
 These are your past working memories, organized as a Segment Tree.
 
-# [s_7f4a2c91d0be] Release automation and memory design
+# Release automation and memory design
 
 Repaired release routing and implemented the Segment Memory architecture.
 
-1. [e1a8459c3b72] The architecture requires deterministic depth rendering.
+1. [o1] The architecture requires deterministic depth rendering.
 
-## [s_04bc86a2fd31] Release workflow repair
+## Release workflow repair
 
 Located the routing defect, implemented the correction, and verified the release candidate.
 
-1. [737a2b11bf4a] Investigation traced the defect to ref-aware metadata.
-2. [722b3da55001] completed: the corrected workflow passed focused validation.
+1. [o2] Investigation traced the defect to ref-aware metadata.
+2. [o3] completed: the corrected workflow passed focused validation.
 
-### [s_91d6e0a4c2b8] Branch routing investigation
+### Branch routing investigation
 
 Mapped branch creation and manual dispatch to the intended release channels.
 
-1. [c4a7d2e91f30] The workflow selected the wrong path when a release branch was created.
-2. [f8b1c6a03d27] The ref-aware route passed focused validation.
+1. [o4] The workflow selected the wrong path when a release branch was created.
+2. [o5] The ref-aware route passed focused validation.
 ```
 
-Every displayed ID is readable with `om_read`.
+Every displayed ID is readable with `om_read`. Expanded Segment headings keep their title and summary while hiding their ID; collapsed Segments and visible Observations retain it. IDs never change when the view depth changes.
 
 ## Install
 
 Requires Pi 0.81.0 or newer.
+
+The short-ID ledger uses `om.observations.recorded` envelope version 2. Start a new Session for this format: previous random-ID V4 ledgers and V2/V3 memory are not migrated or read. Use one Pi process per writable Session; concurrent processes writing the same Session are unsupported.
 
 ```bash
 pi install npm:pi-segment-memory
@@ -145,7 +148,7 @@ See [docs/configuration.md](docs/configuration.md) for exact semantics.
 With `memoryDepth: 0`, only the Root summary is injected:
 
 ```md
-# [s_root] Project session
+# [s1] Project session
 
 Migration and release work for the project.
 ```
@@ -153,13 +156,13 @@ Migration and release work for the project.
 With `memoryDepth: 1`, Root Observations and the Chapter summary become visible:
 
 ```md
-# [s_root] Project session
+# Project session
 
 Migration and release work for the project.
 
-1. [o_root] The release candidate is waiting for final verification.
+1. [o1] The release candidate is waiting for final verification.
 
-## [s_chapter] Release automation
+## [s2] Release automation
 
 The release workflow was repaired and verified.
 ```
@@ -167,19 +170,19 @@ The release workflow was repaired and verified.
 With `memoryDepth: 2`, Chapter Observations and the Phase summary are added:
 
 ```md
-# [s_root] Project session
+# Project session
 
 Migration and release work for the project.
 
-1. [o_root] The release candidate is waiting for final verification.
+1. [o1] The release candidate is waiting for final verification.
 
-## [s_chapter] Release automation
+## Release automation
 
 The release workflow was repaired and verified.
 
-1. [o_chapter] The workflow now routes release branches to the correct environment.
+1. [o2] The workflow now routes release branches to the correct environment.
 
-### [s_phase] Branch routing investigation
+### [s3] Branch routing investigation
 
 The routing defect was traced to ref-aware metadata.
 ```
@@ -187,25 +190,25 @@ The routing defect was traced to ref-aware metadata.
 With the recommended `memoryDepth: 3`, Phase Observations and the Detail summary are also visible:
 
 ```md
-# [s_root] Project session
+# Project session
 
 Migration and release work for the project.
 
-1. [o_root] The release candidate is waiting for final verification.
+1. [o1] The release candidate is waiting for final verification.
 
-## [s_chapter] Release automation
+## Release automation
 
 The release workflow was repaired and verified.
 
-1. [o_chapter] The workflow now routes release branches to the correct environment.
+1. [o2] The workflow now routes release branches to the correct environment.
 
-### [s_phase] Branch routing investigation
+### Branch routing investigation
 
 The routing defect was traced to ref-aware metadata.
 
-1. [o_phase] The manual dispatch path passed focused validation.
+1. [o3] The manual dispatch path passed focused validation.
 
-#### [s_detail] Exact ref verification
+#### [s4] Exact ref verification
 
 The candidate image and Pack reference point to the same release commit.
 ```
@@ -216,7 +219,7 @@ Each increment applies the same rule to the next Segment level: the Segment summ
 
 ### Background
 
-`agent_start` and `turn_end` check pending source growth. One Observer model request returns one recursive `tree` proposal containing new Observations, new nested Segments, and an optional same-ID Root Segment version. Background runs use `observerChunkMaxTokens` and are serialized per runtime.
+`agent_start` and `turn_end` check pending source growth. One Observer model request returns one recursive `tree` proposal containing new Observations, new nested Segments, and an optional same-ID Root Segment version. Background runs use `observerChunkMaxTokens` and are serialized per runtime. Fork initialization shares that queue. A failed or uncertain ledger append blocks memory reads and writes for that SessionManager; reopen the saved Session to recover from its actual ledger.
 
 ### Compaction
 
@@ -250,7 +253,7 @@ Model proposals use narrower best effort: invalid local Segments are removed and
 Example tool arguments:
 
 ```json
-{"sessionId":"01abc...","nodeId":"s_7f4a2c91d0be","depth":-1,"format":"jsonl","outputPath":"reports/memory.jsonl"}
+{"sessionId":"01abc...","nodeId":"s1","depth":-1,"format":"jsonl","outputPath":"reports/memory.jsonl"}
 ```
 
 ## Persistence and boundaries
@@ -286,6 +289,7 @@ npx --yes tsx eval/run-observer-eval.mjs
 - [How it works](docs/how-it-works.md)
 - [Configuration](docs/configuration.md)
 - [Architecture plan](docs/segment_memory_architecture_plan.md)
+- [Session-scoped short IDs and lifecycle](docs/node-reference-design.md)
 
 ## License
 

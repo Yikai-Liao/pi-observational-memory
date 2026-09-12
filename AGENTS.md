@@ -28,6 +28,13 @@ Segment non-expansion is a prompt/eval quality criterion, not a runtime tree
 invariant; replay and proposal normalization must not reject records using local
 token estimates.
 
+Node IDs are the persisted `sN/oN` identities (envelope version 2), with no
+random-ID compatibility layer. Allocation must replay the whole Session ledger,
+while trees replay only the selected branch. Fork inherits source watermarks
+before exposing or allocating IDs. Pi mutates memory before disk append; an
+uncertain write blocks that manager until the saved Session is reopened. See
+`docs/node-reference-design.md` and `tests/session-node-ids.test.ts`.
+
 Compaction queues a fresh forced Observer, then rebuilds and renders by
 `memoryDepth` (Root depth 0). The forced run rereads the active branch and flushes
 all pending source without the background chunk cap, even in passive mode.

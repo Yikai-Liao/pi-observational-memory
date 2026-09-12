@@ -1,11 +1,24 @@
 export const OM_OBSERVATIONS_RECORDED = "om.observations.recorded";
+export const OM_NODE_IDS_INHERITED = "om.node-ids.inherited";
 export const SEGMENT_RENDERED_DETAILS = "om.segment-tree.rendered";
 
-export const OBSERVATION_ID_PATTERN = /^[a-f0-9]{12}$/;
-export const SEGMENT_ID_PATTERN = /^s_[a-f0-9]{12}$/;
+export const OBSERVATION_ID_PATTERN = /^o[1-9][0-9]*$/;
+export const SEGMENT_ID_PATTERN = /^s[1-9][0-9]*$/;
 
-export type SegmentId = `s_${string}`;
+export type SegmentId = `s${string}`;
 export type NodeId = string;
+
+export type NodeHighWater = { segment: string; observation: string };
+export type NodeAllocation = {
+	highWater: NodeHighWater;
+	birthEntryById: Map<NodeId, string>;
+};
+export type NodeIdsInheritedData = {
+	version: 1;
+	sessionId: string;
+	sourceSessionId: string;
+	highWater: NodeHighWater;
+};
 
 export type Observation = {
 	id: string;
@@ -24,8 +37,9 @@ export type Node = Observation | Segment;
 export type SegmentCheck = "not_requested" | "complete" | "partial";
 
 export type ObservationsRecordedEntryData = {
-	version: 1;
+	version: 2;
 	nodeRecords: Node[];
+	highWater: NodeHighWater;
 	coversUpToId?: string;
 	segmentCheck: SegmentCheck;
 	warnings?: string[];
@@ -33,9 +47,10 @@ export type ObservationsRecordedEntryData = {
 
 export type SegmentMemoryDetails = {
 	type: typeof SEGMENT_RENDERED_DETAILS;
-	version: 1;
+	version: 2;
 	memoryDepth: number;
 	renderedNodeIds: NodeId[];
+	exposedRefs: NodeId[];
 };
 
 export type RefProposal = { type: "ref"; id: NodeId };
@@ -60,6 +75,7 @@ export type TreeDiagnostic = {
 };
 
 export type MemoryTree = {
+	allocation: NodeAllocation;
 	observationsById: Map<string, Observation>;
 	segmentsById: Map<SegmentId, Segment>;
 	root?: Node;
@@ -92,7 +108,8 @@ export function isObservation(node: Node | undefined): node is Observation {
 }
 
 export function isNodeId(value: unknown): value is NodeId {
-	return typeof value === "string" && (OBSERVATION_ID_PATTERN.test(value) || SEGMENT_ID_PATTERN.test(value));
+	return typeof value === "string" && value === value.trim()
+		&& (OBSERVATION_ID_PATTERN.test(value) || SEGMENT_ID_PATTERN.test(value));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -107,10 +124,23 @@ function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[])
 	return Object.keys(value).every((key) => allowed.includes(key));
 }
 
+export function isNodeHighWater(value: unknown): value is NodeHighWater {
+	return isRecord(value) && hasOnlyKeys(value, ["segment", "observation"])
+		&& typeof value.segment === "string" && value.segment === value.segment.trim() && /^(0|[1-9][0-9]*)$/.test(value.segment)
+		&& typeof value.observation === "string" && value.observation === value.observation.trim() && /^(0|[1-9][0-9]*)$/.test(value.observation);
+}
+
+export function isNodeIdsInheritedData(value: unknown): value is NodeIdsInheritedData {
+	return isRecord(value) && hasOnlyKeys(value, ["version", "sessionId", "sourceSessionId", "highWater"])
+		&& value.version === 1 && isNonEmptySingleLine(value.sessionId)
+		&& isNonEmptySingleLine(value.sourceSessionId) && value.sessionId !== value.sourceSessionId
+		&& isNodeHighWater(value.highWater);
+}
+
 export function isObservationRecord(value: unknown): value is Observation {
 	if (!isRecord(value)) return false;
 	return hasOnlyKeys(value, ["id", "content", "sourceEntryIds"])
-		&& OBSERVATION_ID_PATTERN.test(String(value.id ?? ""))
+		&& isNodeId(value.id) && OBSERVATION_ID_PATTERN.test(value.id)
 		&& isNonEmptySingleLine(value.content)
 		&& Array.isArray(value.sourceEntryIds)
 		&& value.sourceEntryIds.length > 0
@@ -121,7 +151,7 @@ export function isObservationRecord(value: unknown): value is Observation {
 export function isSegmentRecord(value: unknown): value is Segment {
 	if (!isRecord(value)) return false;
 	return hasOnlyKeys(value, ["id", "title", "summary", "childIds"])
-		&& SEGMENT_ID_PATTERN.test(String(value.id ?? ""))
+		&& isNodeId(value.id) && SEGMENT_ID_PATTERN.test(value.id)
 		&& isNonEmptySingleLine(value.title)
 		&& value.title.length <= 120
 		&& isNonEmptySingleLine(value.summary)
@@ -137,8 +167,8 @@ export function isNodeRecord(value: unknown): value is Node {
 
 export function isObservationsRecordedData(value: unknown): value is ObservationsRecordedEntryData {
 	if (!isRecord(value)) return false;
-	if (!hasOnlyKeys(value, ["version", "nodeRecords", "coversUpToId", "segmentCheck", "warnings"])) return false;
-	if (value.version !== 1 || !Array.isArray(value.nodeRecords) || !value.nodeRecords.every(isNodeRecord)) return false;
+	if (!hasOnlyKeys(value, ["version", "nodeRecords", "highWater", "coversUpToId", "segmentCheck", "warnings"])) return false;
+	if (value.version !== 2 || !isNodeHighWater(value.highWater) || !Array.isArray(value.nodeRecords) || !value.nodeRecords.every(isNodeRecord)) return false;
 	if (!["not_requested", "complete", "partial"].includes(String(value.segmentCheck))) return false;
 	if (value.coversUpToId !== undefined && !isNonEmptySingleLine(value.coversUpToId)) return false;
 	if (value.warnings !== undefined && (!Array.isArray(value.warnings) || !value.warnings.every(isNonEmptySingleLine))) return false;

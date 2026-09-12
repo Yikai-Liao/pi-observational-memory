@@ -7,7 +7,8 @@ export type SessionExportIdentity = { sessionId: string; name?: string; cwd?: st
 
 function markdown(node: NodeRead, heading = 1): string {
 	if (node.kind === "observation") return `1. [${node.id}] ${node.content}`;
-	const parts = [`${"#".repeat(heading)} [${node.id}] ${node.title}`];
+	// Child previews are displayed and retain their own IDs; the parent is expanded.
+	const parts = [`${"#".repeat(heading)} ${node.children.length === 0 ? `[${node.id}] ` : ""}${node.title}`];
 	if (node.summary) parts.push(node.summary);
 	const full = node.children.filter((child): child is NodeRead => !("preview" in child));
 	let observationIndex = 0;
@@ -54,7 +55,8 @@ export function exportMemory(
 	const depth = options.depth ?? 1;
 	const includeSummary = options.includeSummary ?? true;
 	const format = options.format ?? "markdown";
-	if (format === "jsonl") return jsonl(tree, identity, options.nodeId, depth, includeSummary);
+	// Validate target and depth identically for all output formats.
 	const result = inspectNode(tree, options.nodeId, depth, includeSummary);
+	if (format === "jsonl") return jsonl(tree, identity, options.nodeId, depth, includeSummary);
 	return format === "json" ? JSON.stringify(result, null, 2) : markdown(result);
 }

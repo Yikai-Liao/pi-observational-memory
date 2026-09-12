@@ -1,3 +1,4 @@
+import { recorded } from "./fixtures/node-records.js";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,36 +13,36 @@ import { normalizeOmReadArguments, OM_READ_SCHEMA, registerOmReadTool } from "..
 import { normalizeOmSessionsArguments, OM_SESSIONS_SCHEMA, registerOmSessionsTool } from "../src/tools/om-sessions.js";
 
 const entries = (summary = "Located and fixed the release issue."): Entry[] => {
-	const a = { id: "aaaaaaaaaaaa", content: "Investigated the detailed release issue and located the durable root cause.", sourceEntryIds: ["raw-a"] };
-	const b = { id: "bbbbbbbbbbbb", content: "Implemented the detailed release repair and verified its durable behavior.", sourceEntryIds: ["raw-b"] };
-	const root = { id: "s_111111111111", title: "Release repair", summary, childIds: [a.id, b.id] };
+	const a = { id: "o1", content: "Investigated the detailed release issue and located the durable root cause.", sourceEntryIds: ["raw-a"] };
+	const b = { id: "o2", content: "Implemented the detailed release repair and verified its durable behavior.", sourceEntryIds: ["raw-b"] };
+	const root = { id: "s1", title: "Release repair", summary, childIds: [a.id, b.id] };
 	return [
 		{ type: "message", id: "raw-a" }, { type: "message", id: "raw-b" },
-		{ type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: { version: 1, nodeRecords: [a, b, root], coversUpToId: "raw-b", segmentCheck: "complete" } },
+		{ type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: recorded({ nodeRecords: [a, b, root], coversUpToId: "raw-b", segmentCheck: "complete" }) },
 	];
 };
 
 const nestedEntries = (): Entry[] => {
-	const a = { id: "aaaaaaaaaaaa", content: "Investigated the detailed release issue and located the durable root cause.", sourceEntryIds: ["raw-a"] };
-	const b = { id: "bbbbbbbbbbbb", content: "Implemented the detailed release repair and verified its durable behavior.", sourceEntryIds: ["raw-b"] };
-	const c = { id: "cccccccccccc", content: "Documented the final release behavior for future maintenance.", sourceEntryIds: ["raw-c"] };
-	const child = { id: "s_222222222222", title: "Repair phase", summary: "Fixed release behavior.", childIds: [a.id, b.id] };
-	const root = { id: "s_111111111111", title: "Release project", summary: "Completed release work.", childIds: [child.id, c.id] };
+	const a = { id: "o1", content: "Investigated the detailed release issue and located the durable root cause.", sourceEntryIds: ["raw-a"] };
+	const b = { id: "o2", content: "Implemented the detailed release repair and verified its durable behavior.", sourceEntryIds: ["raw-b"] };
+	const c = { id: "o3", content: "Documented the final release behavior for future maintenance.", sourceEntryIds: ["raw-c"] };
+	const child = { id: "s2", title: "Repair phase", summary: "Fixed release behavior.", childIds: [a.id, b.id] };
+	const root = { id: "s1", title: "Release project", summary: "Completed release work.", childIds: [child.id, c.id] };
 	return [
 		{ type: "message", id: "raw-a" }, { type: "message", id: "raw-b" }, { type: "message", id: "raw-c" },
-		{ type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: { version: 1, nodeRecords: [a, b, c, child, root], coversUpToId: "raw-c", segmentCheck: "complete" } },
+		{ type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: recorded({ nodeRecords: [a, b, c, child, root], coversUpToId: "raw-c", segmentCheck: "complete" }) },
 	];
 };
 
 function manager(summary?: string, sessionId = "session-a") {
-	return { getBranch: () => entries(summary), getSessionName: () => "Release", getSessionId: () => sessionId };
+	return { getEntries: () => entries(summary), getBranch: () => entries(summary), getSessionName: () => "Release", getSessionId: () => sessionId };
 }
 
 describe("memory inspection and export", () => {
 	it("reads depth 0, full subtrees, and source provenance", () => {
 		const tree = new MemoryTreeStore().rebuild(entries());
 		const shallow = inspectNode(tree, undefined, 0, true) as any;
-		expect(shallow.children[0]).toMatchObject({ id: "aaaaaaaaaaaa", kind: "observation" });
+		expect(shallow.children[0]).toMatchObject({ id: "o1", kind: "observation" });
 		const full = inspectNode(tree, undefined, -1, true) as any;
 		expect(full.children[0].sourceEntryIds).toEqual(["raw-a"]);
 	});
@@ -51,35 +52,46 @@ describe("memory inspection and export", () => {
 		const lines = exportMemory(tree, { sessionId: "session-a", name: "Release", cwd: "/work/project" }, { depth: -1, format: "jsonl" })
 			.split("\n").map((line) => JSON.parse(line));
 		expect(lines[0]).toMatchObject({ recordType: "session", sessionId: "session-a", cwd: "/work/project" });
-		expect(lines[1]).toMatchObject({ nodeId: "s_111111111111", parentId: null, kind: "segment", summary: "Located and fixed the release issue." });
-		expect(lines[2]).toMatchObject({ nodeId: "aaaaaaaaaaaa", parentId: "s_111111111111", position: 0, sourceEntryIds: ["raw-a"] });
-		expect(lines[3]).toMatchObject({ nodeId: "bbbbbbbbbbbb", parentId: "s_111111111111", position: 1 });
+		expect(lines[1]).toMatchObject({ nodeId: "s1", parentId: null, kind: "segment", summary: "Located and fixed the release issue." });
+		expect(lines[2]).toMatchObject({ nodeId: "o1", parentId: "s1", position: 0, sourceEntryIds: ["raw-a"] });
+		expect(lines[3]).toMatchObject({ nodeId: "o2", parentId: "s1", position: 1 });
 	});
 
 	it("honors nodeId, depth, summary, and public JSON/Markdown formats", () => {
 		const tree = new MemoryTreeStore().rebuild(nestedEntries());
-		const child = inspectNode(tree, "s_222222222222", -1, false) as any;
-		expect(child).toMatchObject({ id: "s_222222222222", title: "Repair phase" });
+		const child = inspectNode(tree, "s2", -1, false) as any;
+		expect(child).toMatchObject({ id: "s2", title: "Repair phase" });
 		expect(child.summary).toBeUndefined();
 		const shallow = inspectNode(tree, undefined, 0, false) as any;
-		expect(shallow.children[0]).toEqual({ kind: "segment", id: "s_222222222222", preview: "Repair phase" });
-		expect(shallow.children[1]).toEqual({ kind: "observation", id: "cccccccccccc", preview: expect.stringContaining("Documented") });
+		expect(shallow.children[0]).toEqual({ kind: "segment", id: "s2", preview: "Repair phase" });
+		expect(shallow.children[1]).toEqual({ kind: "observation", id: "o3", preview: expect.stringContaining("Documented") });
+		const preview = exportMemory(tree, { sessionId: "session-a" }, { depth: 0 });
+		expect(preview).toContain("- [s2] Repair phase");
+		expect(preview).toContain("- [o3]");
+		expect(preview).not.toContain("[s1]");
 		const json = JSON.parse(exportMemory(tree, { sessionId: "session-a" }, { format: "json", depth: 0, includeSummary: false }));
-		expect(json).toMatchObject({ kind: "segment", id: "s_111111111111" });
+		expect(json).toMatchObject({ kind: "segment", id: "s1" });
 		expect(json.summary).toBeUndefined();
 		const markdown = exportMemory(tree, { sessionId: "session-a" }, { format: "markdown", depth: 1 });
-		expect(markdown).toContain("# [s_111111111111] Release project");
-		expect(markdown).toContain("## [s_222222222222] Repair phase");
-		expect(markdown.indexOf("## [s_222222222222]")).toBeLessThan(markdown.indexOf("[cccccccccccc]"));
+		expect(markdown).toContain("# Release project");
+		expect(markdown).toContain("## Repair phase");
+		expect(markdown.indexOf("## Repair phase")).toBeLessThan(markdown.indexOf("[o3]"));
+	});
+
+	it.each(["o0", "s01", "S1", " o1", "o1 ", "o1\n", "s_111111111111", "aaaaaaaaaaaa"])("rejects noncanonical tool IDs %s in every format", (nodeId) => {
+		const tree = new MemoryTreeStore().rebuild(entries());
+		for (const format of ["markdown", "json", "jsonl"] as const) {
+			expect(() => exportMemory(tree, { sessionId: "session-a" }, { nodeId, format })).toThrow(/Invalid node ID/);
+		}
 	});
 
 	it("applies JSONL depth cutoff and omits summaries when requested", () => {
 		const tree = new MemoryTreeStore().rebuild(nestedEntries());
 		const lines = exportMemory(tree, { sessionId: "session-a" }, { format: "jsonl", depth: 1, includeSummary: false })
 			.split("\n").map((line) => JSON.parse(line));
-		expect(lines.slice(1).map((line) => line.nodeId)).toEqual(["s_111111111111", "s_222222222222", "cccccccccccc"]);
-		expect(lines[2]).toMatchObject({ parentId: "s_111111111111", position: 0, kind: "segment" });
-		expect(lines[3]).toMatchObject({ parentId: "s_111111111111", position: 1, sourceEntryIds: ["raw-c"] });
+		expect(lines.slice(1).map((line) => line.nodeId)).toEqual(["s1", "s2", "o3"]);
+		expect(lines[2]).toMatchObject({ parentId: "s1", position: 0, kind: "segment" });
+		expect(lines[3]).toMatchObject({ parentId: "s1", position: 1, sourceEntryIds: ["raw-c"] });
 		expect(lines[2].summary).toBeUndefined();
 	});
 });
@@ -161,11 +173,11 @@ describe("memory tools", () => {
 		registerOmReadTool({ registerTool: (tool: any) => tools.push(tool) } as any, catalog);
 		const context = { cwd: "/current", sessionManager: manager("Current session summary.", "current") };
 		const result = await tools[0].execute("id", {
-			sessionId: "remote", nodeId: "s_222222222222", depth: 0, includeSummary: false, format: "json",
+			sessionId: "remote", nodeId: "s2", depth: 0, includeSummary: false, format: "json",
 		}, undefined, undefined, context);
 		expect(catalog.locate).toHaveBeenCalledWith("remote");
 		const output = JSON.parse(result.content[0].text);
-		expect(output).toMatchObject({ id: "s_222222222222", title: "Repair phase" });
+		expect(output).toMatchObject({ id: "s2", title: "Repair phase" });
 		expect(output.summary).toBeUndefined();
 		expect(output.children[0]).toHaveProperty("preview");
 		expect(result.details.sessionId).toBe("remote");
@@ -176,13 +188,13 @@ describe("memory tools", () => {
 		const huge = "x".repeat(150_000);
 		const hugeEntries = [
 			{ type: "message", id: "raw-huge" },
-			{ type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: { version: 1, nodeRecords: [{ id: "aaaaaaaaaaaa", content: huge, sourceEntryIds: ["raw-huge"] }], coversUpToId: "raw-huge", segmentCheck: "not_requested" } },
+			{ type: "custom", id: "memory", customType: OM_OBSERVATIONS_RECORDED, data: recorded({ nodeRecords: [{ id: "o1", content: huge, sourceEntryIds: ["raw-huge"] }], coversUpToId: "raw-huge", segmentCheck: "not_requested" }) },
 		] as Entry[];
 		const catalog = { list: vi.fn(async () => Array.from({ length: 1_000 }, (_, index) => ({ sessionId: `session-${index}`, root: { summary: huge.slice(0, 100) } }))), locate: vi.fn() } as any;
 		const pi = { registerTool: (tool: any) => tools.push(tool) } as any;
 		registerOmSessionsTool(pi, catalog);
 		registerOmReadTool(pi, catalog);
-		const context = { cwd: "/work", sessionManager: { getBranch: () => hugeEntries, getSessionId: () => "current" } };
+		const context = { cwd: "/work", sessionManager: { getEntries: () => hugeEntries, getBranch: () => hugeEntries, getSessionId: () => "current" } };
 		const sessions = await tools[0].execute("id", {}, undefined, undefined, context);
 		const read = await tools[1].execute("id", {}, undefined, undefined, context);
 		expect(sessions.details.truncated).toBe(true);

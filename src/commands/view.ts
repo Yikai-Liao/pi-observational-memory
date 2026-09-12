@@ -1,8 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { copyTextToClipboard } from "../clipboard.js";
 import { maxTreeDepth, renderMemoryTree } from "../memory-tree/render.js";
-import { MemoryTreeStore } from "../memory-tree/store.js";
-import type { Entry } from "../memory-tree/types.js";
+import { readSessionMemory } from "../sessions/memory.js";
 import type { Runtime } from "../runtime.js";
 
 function modeFrom(args: unknown): string | undefined {
@@ -28,7 +27,7 @@ export function registerViewCommand(
 			}
 			let tree;
 			try {
-				tree = new MemoryTreeStore().rebuild(ctx.sessionManager.getBranch() as Entry[]);
+				tree = readSessionMemory(ctx.sessionManager);
 			} catch (error) {
 				ctx.ui.notify(`Memory tree unavailable: ${error instanceof Error ? error.message : String(error)}`, "warning");
 				return;
